@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RapidMart — Manager Portal</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/api.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand">🛒 Rapid<span>Mart</span> <span class="badge badge-info">MANAGER</span></a>
+        <div id="user-nav" class="nav-links"></div>
+    </nav>
+
+    <main class="container">
+        <div class="row-between">
+            <h2>Management Dashboard</h2>
+            <a href="/loyalty/tiers.html" class="btn btn-secondary btn-sm">Loyalty Management</a>
+        </div>
+
+        <section class="glass-card mt-2">
+            <form id="report-form" class="row" novalidate>
+                <h3 style="margin-right: auto;">Sales Report</h3>
+                <label for="startDate" class="muted small">From</label>
+                <input type="date" id="startDate" class="form-control inline-control">
+                <label for="endDate" class="muted small">To</label>
+                <input type="date" id="endDate" class="form-control inline-control">
+                <button type="submit" id="report-btn" class="btn btn-primary btn-sm">Apply</button>
+                <button type="button" id="csv-btn" class="btn btn-secondary btn-sm">Export CSV</button>
+            </form>
+            <div class="grid-3 mt-2">
+                <div class="panel" style="text-align: center; margin: 0;">
+                    <h4>Gross Sales</h4><div id="stat-revenue" class="stat-value text-success">–</div>
+                    <div id="stat-orders" class="muted small"></div>
+                </div>
+                <div class="panel" style="text-align: center; margin: 0;">
+                    <h4>Refunded</h4><div id="stat-refunded" class="stat-value text-danger">–</div>
+                </div>
+                <div class="panel" style="text-align: center; margin: 0;">
+                    <h4>Net Sales</h4><div id="stat-net" class="stat-value" style="color: var(--accent-secondary);">–</div>
+                </div>
+            </div>
+            <p id="report-basis" class="muted small mt-1"></p>
+            <div class="grid-2 mt-1">
+                <div class="panel" style="margin: 0;"><h4>Inventory</h4><div id="inventory-summary" class="small mt-1">–</div></div>
+                <div class="panel" style="margin: 0;"><h4>Deliveries</h4><div id="delivery-summary" class="small mt-1">–</div></div>
+            </div>
+        </section>
+
+        <section class="glass-card section" id="stock-approvals">
+            <div class="row-between">
+                <h3>Stock Approval Requests</h3>
+                <div class="row">
+                    <label for="approval-status-filter" class="muted small">Show</label>
+                    <select id="approval-status-filter" class="form-control inline-control">
+                        <option value="PENDING" selected>Pending approval</option>
+                        <option value="">All requests</option>
+                    </select>
+                </div>
+            </div>
+            <p class="muted small mt-1">Inventory Officers raise stock requests; a manager approves or rejects each one here. Approval does not change stock: inventory increases only when an Inventory Officer receives the approved goods. You cannot review a request you created.</p>
+            <div id="approvals-container" class="table-responsive mt-1"><p class="muted">Loading…</p></div>
+        </section>
+
+        <section class="glass-card section">
+            <div class="row-between">
+                <h3>Employees &amp; Access</h3>
+                <div class="row">
+                    <a href="/delivery-coordinator/dashboard.html" class="btn btn-secondary btn-sm">Driver Management</a>
+                    <button type="button" class="btn btn-primary btn-sm" data-new-employee>+ New Employee</button>
+                </div>
+            </div>
+            <p class="muted small mt-1">Managers control all employee roles. Delivery coordinators can manage delivery-staff-only accounts from Driver Management.</p>
+            <form id="employee-form" class="panel" hidden novalidate>
+                <h4 id="employee-form-title" class="mb-1">New Employee</h4>
+                <input type="hidden" id="employeeId">
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="empName">Full Name</label>
+                        <input type="text" id="empName" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="empPhone">Phone</label>
+                        <input type="tel" id="empPhone" class="form-control">
+                    </div>
+                </div>
+                <div class="grid-2" id="credentials-group">
+                    <div class="form-group">
+                        <label for="empEmail">Email</label>
+                        <input type="email" id="empEmail" class="form-control" required autocomplete="off">
+                    </div>
+                    <div class="form-group">
+                        <label for="empPassword">Initial Password (min 8 characters)</label>
+                        <input type="password" id="empPassword" class="form-control" required minlength="8" autocomplete="new-password">
+                    </div>
+                </div>
+                <fieldset class="form-group" style="border: none;">
+                    <legend class="small" style="margin-bottom: 0.5rem;">Roles</legend>
+                    <div class="checkbox-row" id="role-checkboxes"></div>
+                </fieldset>
+                <div class="form-group row" id="active-group">
+                    <input type="checkbox" id="empActive" checked>
+                    <label for="empActive" style="margin: 0;">Account active</label>
+                </div>
+                <div class="row">
+                    <button type="submit" id="employee-save" class="btn btn-success">Save Employee</button>
+                    <button type="button" id="employee-cancel" class="btn btn-secondary">Cancel</button>
+                </div>
+            </form>
+            <form id="employee-filter-form" class="row mt-1" novalidate>
+                <label for="employee-search" class="muted small">Search</label>
+                <input type="search" id="employee-search" class="form-control" style="max-width: 280px;" placeholder="Name, email, or phone">
+                <label for="employee-role-filter" class="muted small">Role</label>
+                <select id="employee-role-filter" class="form-control inline-control">
+                    <option value="">All roles</option>
+                    <option value="DELIVERY_COORDINATOR">Delivery Coordinator</option>
+                    <option value="DELIVERY_STAFF">Delivery Staff</option>
+                    <option value="CASHIER">Cashier</option>
+                    <option value="INVENTORY_STAFF">Inventory Officer</option>
+                    <option value="LOYALTY_OFFICER">Loyalty Officer</option>
+                    <option value="MANAGER">Manager</option>
+                </select>
+                <label for="employee-status-filter" class="muted small">Status</label>
+                <select id="employee-status-filter" class="form-control inline-control"><option value="">All</option><option value="true">Active</option><option value="false">Deactivated</option></select>
+                <button type="button" id="employee-filter-reset" class="btn btn-secondary btn-sm">Reset</button>
+            </form>
+            <div id="employees-container" class="table-responsive mt-1"><p class="muted">Loading…</p></div>
+        </section>
+
+        <section class="glass-card section">
+            <h3>Customer Feedback</h3>
+            <div id="feedback-container" class="mt-1"><p class="muted">Loading…</p></div>
+        </section>
+
+        <section class="glass-card section">
+            <h3>Audit Log</h3>
+            <div id="audit-container" class="table-responsive mt-1"><p class="muted">Loading…</p></div>
+        </section>
+    </main>
+
+    <script>
+        const ROLES = ['CASHIER', 'INVENTORY_STAFF', 'DELIVERY_COORDINATOR', 'DELIVERY_STAFF', 'LOYALTY_OFFICER', 'MANAGER', 'CUSTOMER'];
+        let employees = [];
+
+        document.getElementById('role-checkboxes').innerHTML = ROLES.map(r =>
+            `<label><input type="checkbox" name="role" value="${r}"> ${UI.escape(Auth.roleLabel(r))}</label>`).join('');
+
+        function rangeQuery() {
+            const params = new URLSearchParams();
+            const s = document.getElementById('startDate').value;
+            const e = document.getElementById('endDate').value;
+            if (s) params.set('startDate', s);
+            if (e) params.set('endDate', e);
+            const q = params.toString();
+            return q ? `?${q}` : '';
+        }
+
+        async function loadReports() {
+            try {
+                const [sales, inv, del] = await Promise.all([
+                    API.request('/api/v1/manager/reports/sales' + rangeQuery()),
+                    API.request('/api/v1/manager/reports/inventory'),
+                    API.request('/api/v1/manager/reports/delivery')
+                ]);
+                document.getElementById('stat-revenue').textContent = UI.formatCurrency(sales.totalRevenue);
+                document.getElementById('stat-orders').textContent = `${sales.totalOrders} orders`;
+                document.getElementById('stat-refunded').textContent = UI.formatCurrency(sales.refundedTotal);
+                document.getElementById('stat-net').textContent = UI.formatCurrency(sales.netRevenue);
+                document.getElementById('report-basis').textContent = sales.basis || '';
+                document.getElementById('inventory-summary').textContent = `${inv.totalProducts} products tracked · ${inv.lowStockCount} at or below minimum stock`;
+                document.getElementById('delivery-summary').textContent =
+                    `${del.totalDeliveries} total · ${del.pending} pending · ${del.assigned} assigned · ${del.out_for_delivery} out · ${del.deliveredCount} delivered · ${del.failedCount} failed · ${del.cancelled} cancelled`;
+            } catch (e) { /* toast shown */ }
+        }
+
+        // Stock approvals: Inventory Officers request, managers approve/reject, officers receive. Separation of
+        // duties is enforced by the server; the page only hides actions that would be refused.
+        let stockRequests = [];
+
+        function stockDecision(r) {
+            if (r.status === 'REJECTED') return `Rejected by ${UI.escape(r.rejectedByEmail || '—')} · ${UI.formatDateTime(r.rejectedAt)}<div class="text-danger">Reason: ${UI.escape(r.rejectionReason || '—')}</div>`;
+            if (r.status === 'RECEIVED') return `Approved ${r.approvedQuantity ?? r.requestedQuantity} by ${UI.escape(r.approvedByEmail || '—')}<div>Received ${r.receivedQuantity} by ${UI.escape(r.receivedByEmail || '—')} · ${UI.formatDateTime(r.receivedAt)}</div>`;
+            if (r.status === 'APPROVED') return `Approved ${r.approvedQuantity ?? r.requestedQuantity} by ${UI.escape(r.approvedByEmail || '—')} · ${UI.formatDateTime(r.approvedAt)}<div class="muted">Awaiting receipt</div>`;
+            return '';
+        }
+
+        function stockActions(r) {
+            if (r.status !== 'PENDING') return stockDecision(r);
+            if (r.requestedById === Auth.currentUser.id) return '<span class="muted">Your request: another manager must review it.</span>';
+            return `<div class="row">
+                    <label class="sr-only" for="approve-qty-${r.id}">Quantity to approve for ${UI.escape(r.productName)}</label>
+                    <input type="number" id="approve-qty-${r.id}" class="form-control inline-control" style="width: 90px;" min="1" max="${r.requestedQuantity}" value="${r.requestedQuantity}" title="Approved quantity (1–${r.requestedQuantity})">
+                    <button type="button" class="btn btn-success btn-sm" data-approve-restock="${r.id}">Approve</button>
+                </div>
+                <div class="row mt-1">
+                    <label class="sr-only" for="reject-reason-${r.id}">Rejection reason for ${UI.escape(r.productName)}</label>
+                    <input type="text" id="reject-reason-${r.id}" class="form-control" style="min-width: 180px; flex: 1;" maxlength="500" placeholder="Rejection reason (required)">
+                    <button type="button" class="btn btn-danger btn-sm" data-reject-restock="${r.id}">Reject</button>
+                </div>`;
+        }
+
+        // Current page of each paged list, so live refreshes and actions stay on the page being viewed.
+        let stockPage = 0, feedbackPage = 0, auditPage = 0;
+
+        async function loadStockApprovals(page = stockPage) {
+            const el = document.getElementById('approvals-container');
+            const status = document.getElementById('approval-status-filter').value;
+            try {
+                const res = await API.request(`/api/v1/inventory/restock-requests?size=20&page=${page}` + (status ? `&status=${encodeURIComponent(status)}` : ''));
+                // A decision can empty the last page; step back instead of showing nothing.
+                if (!res.content.length && page > 0) return loadStockApprovals(page - 1);
+                stockPage = page;
+                stockRequests = res.content;
+                el.innerHTML = stockRequests.length ? `
+                    <table>
+                        <thead><tr><th>Product</th><th>Current</th><th>Min</th><th>Max</th><th>Requested</th><th>Requester</th><th>Request Date</th><th>Status</th><th>Decision</th></tr></thead>
+                        <tbody>${stockRequests.map(r => `
+                            <tr>
+                                <td><strong>${UI.escape(r.productName)}</strong><div class="muted small">${UI.escape(r.productSku)}</div></td>
+                                <td class="${r.currentStock != null && r.currentStock <= r.minimumLevel ? 'text-danger' : ''}"><strong>${r.currentStock ?? '—'}</strong></td>
+                                <td>${r.minimumLevel ?? '—'}</td>
+                                <td>${r.maximumLevel ?? '—'}</td>
+                                <td><strong>${r.requestedQuantity}</strong></td>
+                                <td class="small">${UI.escape(r.requestedByName || '')}<div class="muted">${UI.escape(r.requestedByEmail)}</div></td>
+                                <td class="small">${UI.formatDateTime(r.requestedAt || r.createdAt)}</td>
+                                <td>${UI.statusBadge(r.status)}</td>
+                                <td class="small">${stockActions(r)}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>${UI.pager(res, 'stock-page')}` : `<p class="muted">${status === 'PENDING' ? 'No stock requests are waiting for approval.' : 'No stock requests yet.'}</p>`;
+            } catch (e) { UI.setError(el); }
+        }
+
+        function renderEmployees() {
+            const el = document.getElementById('employees-container');
+            const query = document.getElementById('employee-search').value.trim().toLowerCase();
+            const role = document.getElementById('employee-role-filter').value;
+            const status = document.getElementById('employee-status-filter').value;
+            const filtered = employees.filter(emp => {
+                const matchesQuery = !query || emp.fullName.toLowerCase().includes(query)
+                    || emp.email.toLowerCase().includes(query)
+                    || (emp.phone || '').toLowerCase().includes(query);
+                const matchesRole = !role || emp.roles.includes(role);
+                const matchesStatus = !status || String(emp.active) === status;
+                return matchesQuery && matchesRole && matchesStatus;
+            });
+            el.innerHTML = filtered.length ? `
+                <table>
+                    <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Roles</th><th>Status</th><th>Actions</th></tr></thead>
+                    <tbody>${filtered.map(emp => `
+                        <tr>
+                            <td>${emp.id}</td>
+                            <td><strong>${UI.escape(emp.fullName)}</strong><div class="muted small">${UI.escape(emp.phone || '')}</div></td>
+                            <td>${UI.escape(emp.email)}</td>
+                            <td>${emp.roles.map(r => `<span class="badge badge-info">${UI.escape(Auth.roleLabel(r))}</span>`).join(' ')}</td>
+                            <td><span class="badge ${emp.active ? 'badge-success' : 'badge-danger'}">${emp.active ? 'Active' : 'Deactivated'}</span></td>
+                            <td><div class="row">
+                                <button type="button" class="btn btn-secondary btn-sm" data-edit="${emp.id}">Edit</button>
+                                ${emp.id !== Auth.currentUser.id ? `<button type="button" class="btn ${emp.active ? 'btn-danger' : 'btn-success'} btn-sm" data-toggle-active="${emp.id}">${emp.active ? 'Deactivate' : 'Activate'}</button>` : ''}
+                            </div></td>
+                        </tr>`).join('')}
+                    </tbody>
+                </table>` : '<p class="muted">No employees match the selected filters.</p>';
+        }
+
+        async function loadEmployees() {
+            const el = document.getElementById('employees-container');
+            try {
+                employees = await API.request('/api/v1/manager/employees');
+                renderEmployees();
+            } catch (e) { UI.setError(el); }
+        }
+
+        async function loadFeedback(page = feedbackPage) {
+            const el = document.getElementById('feedback-container');
+            try {
+                const res = await API.request(`/api/v1/manager/feedback?size=10&page=${page}`);
+                if (!res.content.length && page > 0) return loadFeedback(page - 1);
+                feedbackPage = page;
+                el.innerHTML = res.content.length ? res.content.map(f => `
+                    <div class="panel">
+                        <div class="row-between">
+                            <strong>[${UI.escape(f.category)}] ${UI.escape(f.subject)}</strong>
+                            ${UI.statusBadge(f.status)}
+                        </div>
+                        <p class="muted small">${UI.escape(f.customerName)} &lt;${UI.escape(f.customerEmail)}&gt; · ${UI.formatDateTime(f.createdAt)}</p>
+                        <p style="white-space: pre-wrap; margin: 0.5rem 0;">${UI.escape(f.message)}</p>
+                        ${f.replies.map(r => `<div class="small" style="border-left: 2px solid var(--accent-secondary); padding-left: 0.75rem; margin: 0.4rem 0;">
+                            <strong>${UI.escape(r.repliedByName)}:</strong> <span style="white-space: pre-wrap;">${UI.escape(r.replyMessage)}</span></div>`).join('')}
+                        ${f.status !== 'CLOSED' ? `
+                            <div class="row mt-1">
+                                <label class="sr-only" for="reply-${f.id}">Reply</label>
+                                <input type="text" id="reply-${f.id}" class="form-control" style="flex: 1; min-width: 200px;" placeholder="Write a reply…">
+                                <label class="sr-only" for="cat-${f.id}">Category</label>
+                                <select id="cat-${f.id}" class="form-control inline-control">
+                                    ${['DELIVERY', 'PRODUCT_QUALITY', 'APP_ISSUE', 'PRICING', 'OTHER'].map(c => `<option ${c === f.category ? 'selected' : ''}>${c}</option>`).join('')}
+                                </select>
+                                <button type="button" class="btn btn-primary btn-sm" data-reply="${f.id}">Reply</button>
+                                <button type="button" class="btn btn-secondary btn-sm" data-close="${f.id}">Close</button>
+                            </div>` : ''}
+                    </div>`).join('') + UI.pager(res, 'feedback-page') : '<p class="muted">No customer feedback yet.</p>';
+            } catch (e) { UI.setError(el); }
+        }
+
+        async function loadAudit(page = auditPage) {
+            const el = document.getElementById('audit-container');
+            try {
+                const res = await API.request(`/api/v1/manager/audit-logs?size=25&page=${page}`);
+                if (!res.content.length && page > 0) return loadAudit(page - 1);
+                auditPage = page;
+                el.innerHTML = res.content.length ? `
+                    <table>
+                        <thead><tr><th>Time</th><th>Action</th><th>Actor</th><th>Target</th><th>Details</th></tr></thead>
+                        <tbody>${res.content.map(a => `
+                            <tr>
+                                <td class="small">${UI.formatDateTime(a.timestamp)}</td>
+                                <td><span class="badge badge-warning">${UI.escape(a.action)}</span></td>
+                                <td class="small">${UI.escape(a.actorEmail)}</td>
+                                <td class="small">${UI.escape(a.targetReference || '—')}</td>
+                                <td class="small">${UI.escape(a.details || '')}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>${UI.pager(res, 'audit-page')}` : '<p class="muted">No audit entries yet.</p>';
+            } catch (e) { UI.setError(el); }
+        }
+
+        function openEmployeeForm(emp) {
+            const form = document.getElementById('employee-form');
+            form.hidden = false;
+            document.getElementById('employee-form-title').textContent = emp ? `Edit ${emp.email}` : 'New Employee';
+            document.getElementById('employeeId').value = emp ? emp.id : '';
+            document.getElementById('empName').value = emp ? emp.fullName : '';
+            document.getElementById('empPhone').value = emp ? (emp.phone || '') : '';
+            document.getElementById('empEmail').value = '';
+            document.getElementById('empPassword').value = '';
+            document.getElementById('credentials-group').hidden = !!emp;
+            document.getElementById('active-group').hidden = !emp;
+            document.getElementById('empActive').checked = emp ? emp.active : true;
+            document.querySelectorAll('input[name="role"]').forEach(cb => { cb.checked = emp ? emp.roles.includes(cb.value) : false; });
+            document.getElementById('empName').focus();
+        }
+
+        async function updateEmployee(emp, changes) {
+            await API.request(`/api/v1/manager/employees/${emp.id}`, {
+                method: 'PUT',
+                body: { fullName: emp.fullName, phone: emp.phone, roles: emp.roles, active: emp.active, ...changes }
+            });
+        }
+
+        document.getElementById('report-form').addEventListener('submit', async e => {
+            e.preventDefault();
+            const s = document.getElementById('startDate').value;
+            const en = document.getElementById('endDate').value;
+            if (s && en && en < s) return UI.showToast('End date must be on or after start date.', 'warning');
+            await UI.withBusy(document.getElementById('report-btn'), loadReports);
+        });
+
+        document.getElementById('csv-btn').addEventListener('click', () => {
+            window.location.href = '/api/v1/manager/reports/sales/csv' + rangeQuery();
+        });
+
+        document.getElementById('approval-status-filter').addEventListener('change', () => loadStockApprovals(0));
+        document.getElementById('employee-cancel').addEventListener('click', () => { document.getElementById('employee-form').hidden = true; });
+        document.getElementById('employee-filter-form').addEventListener('submit', e => e.preventDefault());
+        document.getElementById('employee-search').addEventListener('input', renderEmployees);
+        document.getElementById('employee-role-filter').addEventListener('change', renderEmployees);
+        document.getElementById('employee-status-filter').addEventListener('change', renderEmployees);
+        document.getElementById('employee-filter-reset').addEventListener('click', () => {
+            document.getElementById('employee-filter-form').reset();
+            renderEmployees();
+        });
+
+        document.getElementById('employee-form').addEventListener('submit', async e => {
+            e.preventDefault();
+            const id = document.getElementById('employeeId').value;
+            const roles = [...document.querySelectorAll('input[name="role"]:checked')].map(cb => cb.value);
+            const fullName = document.getElementById('empName').value.trim();
+            const phone = document.getElementById('empPhone').value.trim() || null;
+            if (!fullName) return UI.showToast('Full name is required.', 'warning');
+            if (!roles.length) return UI.showToast('Select at least one role.', 'warning');
+
+            await UI.withBusy(document.getElementById('employee-save'), async () => {
+                try {
+                    if (id) {
+                        const emp = employees.find(x => String(x.id) === id);
+                        await updateEmployee(emp, { fullName, phone, roles, active: document.getElementById('empActive').checked });
+                        UI.showToast('Employee updated.', 'success');
+                    } else {
+                        const email = document.getElementById('empEmail').value.trim();
+                        const password = document.getElementById('empPassword').value;
+                        if (!email) return UI.showToast('Email is required.', 'warning');
+                        if (password.length < 8) return UI.showToast('Password must be at least 8 characters.', 'warning');
+                        await API.request('/api/v1/manager/employees', { method: 'POST', body: { email, password, fullName, phone, roles } });
+                        UI.showToast('Employee created.', 'success');
+                    }
+                    document.getElementById('employee-form').hidden = true;
+                    await Promise.all([loadEmployees(), loadAudit()]);
+                } catch (err) { /* toast shown */ }
+            });
+        });
+
+        document.querySelector('main').addEventListener('click', async e => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+
+            if (btn.dataset.stockPage) return loadStockApprovals(Number(btn.dataset.stockPage));
+            if (btn.dataset.feedbackPage) return loadFeedback(Number(btn.dataset.feedbackPage));
+            if (btn.dataset.auditPage) return loadAudit(Number(btn.dataset.auditPage));
+
+            if (btn.hasAttribute('data-new-employee')) return openEmployeeForm(null);
+            if (btn.dataset.edit) return openEmployeeForm(employees.find(x => String(x.id) === btn.dataset.edit));
+
+            if (btn.dataset.toggleActive) {
+                const emp = employees.find(x => String(x.id) === btn.dataset.toggleActive);
+                if (!confirm(`${emp.active ? 'Deactivate' : 'Activate'} ${emp.email}?`)) return;
+                await UI.withBusy(btn, async () => {
+                    try {
+                        await updateEmployee(emp, { active: !emp.active });
+                        UI.showToast('Access updated.', 'success');
+                    } catch (err) { /* toast shown */ }
+                });
+                return Promise.all([loadEmployees(), loadAudit()]);
+            }
+
+            if (btn.dataset.approveRestock) {
+                const r = stockRequests.find(x => String(x.id) === btn.dataset.approveRestock);
+                if (!r) return;
+                const approvedQuantity = parseInt(document.getElementById(`approve-qty-${r.id}`).value, 10);
+                if (!Number.isInteger(approvedQuantity) || approvedQuantity < 1 || approvedQuantity > r.requestedQuantity) {
+                    return UI.showToast(`Approved quantity must be between 1 and ${r.requestedQuantity}.`, 'warning');
+                }
+                if (!confirm(`Approve ${approvedQuantity} of ${r.requestedQuantity} unit(s) of ${r.productName} (${r.productSku})?\n\nStock will increase only when an Inventory Officer receives it.`)) return;
+                await UI.withBusy(btn, async () => {
+                    try {
+                        await API.request(`/api/v1/inventory/restock-requests/${r.id}/approve`, { method: 'PUT', body: { approvedQuantity } });
+                        UI.showToast('Stock request approved.', 'success');
+                    } catch (err) { /* toast shown */ }
+                });
+                return Promise.all([loadStockApprovals(), loadAudit()]);
+            }
+
+            if (btn.dataset.rejectRestock) {
+                const r = stockRequests.find(x => String(x.id) === btn.dataset.rejectRestock);
+                if (!r) return;
+                const reasonInput = document.getElementById(`reject-reason-${r.id}`);
+                const reason = reasonInput.value.trim();
+                if (!reason) {
+                    reasonInput.focus();
+                    return UI.showToast('Enter a rejection reason first.', 'warning');
+                }
+                if (!confirm(`Reject the request for ${r.requestedQuantity} unit(s) of ${r.productName}?`)) return;
+                await UI.withBusy(btn, async () => {
+                    try {
+                        await API.request(`/api/v1/inventory/restock-requests/${r.id}/reject`, { method: 'PUT', body: { reason } });
+                        UI.showToast('Stock request rejected.', 'info');
+                    } catch (err) { /* toast shown */ }
+                });
+                return Promise.all([loadStockApprovals(), loadAudit()]);
+            }
+
+            if (btn.dataset.reply) {
+                const id = btn.dataset.reply;
+                const replyMessage = document.getElementById(`reply-${id}`).value.trim();
+                if (!replyMessage) return UI.showToast('Write a reply first.', 'warning');
+                await UI.withBusy(btn, async () => {
+                    try {
+                        await API.request(`/api/v1/manager/feedback/${id}/reply`, {
+                            method: 'POST', body: { replyMessage, category: document.getElementById(`cat-${id}`).value }
+                        });
+                        UI.showToast('Reply sent.', 'success');
+                    } catch (err) { /* toast shown */ }
+                });
+                return loadFeedback();
+            }
+
+            if (btn.dataset.close) {
+                await UI.withBusy(btn, async () => {
+                    try {
+                        await API.request(`/api/v1/manager/feedback/${btn.dataset.close}/close`, { method: 'POST' });
+                        UI.showToast('Feedback closed.', 'info');
+                    } catch (err) { /* toast shown */ }
+                });
+                return loadFeedback();
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (await Auth.requireRole(['MANAGER'])) {
+                loadReports();
+                loadStockApprovals();
+                loadEmployees();
+                loadFeedback();
+                loadAudit();
+                UI.liveRefresh(() => Promise.all([loadReports(), loadStockApprovals(), loadEmployees(), loadFeedback(), loadAudit()]));
+            }
+        });
+    </script>
+</body>
+</html>

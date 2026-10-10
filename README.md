@@ -1,1 +1,1 @@
-# QuickMart-Supermarket-ordering-system
+# RapidMart-Supermarket-ordering-system

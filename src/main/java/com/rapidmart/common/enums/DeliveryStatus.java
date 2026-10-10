@@ -1,0 +1,20 @@
+package com.rapidmart.common.enums;
+
+public enum DeliveryStatus {
+    ORDER_CONFIRMED,
+    PROCESSING,
+    READY_FOR_DELIVERY,
+    OUT_FOR_DELIVERY,
+    DELIVERED,
+    DELIVERY_FAILED,
+    FAILED,
+    CANCELLED,
+    RETURNED,
+    PENDING,
+    ASSIGNED,
+    SCHEDULED,
+    DELIVERED_ON_TIME,
+    OVERDUE,
+    DELIVERED_LATE,
+    RESCHEDULED
+}

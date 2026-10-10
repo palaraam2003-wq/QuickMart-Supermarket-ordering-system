@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RapidMart — Login</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/api.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand">🛒 Rapid<span>Mart</span></a>
+        <ul class="nav-links">
+            <li><a href="/catalogue.html">Catalogue</a></li>
+        </ul>
+    </nav>
+
+    <main class="container" style="max-width: 450px; margin-top: 4rem;">
+        <div class="glass-card">
+            <h2 style="margin-bottom: 1.5rem; text-align: center;">Customer Login</h2>
+            
+            <p><a href="/forgot-password.html">Forgot password?</a></p>
+            <form id="login-form" novalidate>
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" class="form-control" required autocomplete="username" placeholder="user@example.com">
+                </div>
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" class="form-control" required autocomplete="current-password">
+                </div>
+                <button type="submit" id="login-btn" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem;">Login</button>
+            </form>
+            <p class="muted small" style="margin-top: 1.5rem; text-align: center;">
+                Don't have an account? <a href="/register.html" style="color: var(--accent-secondary);">Register here</a>
+            </p>
+        </div>
+    </main>
+
+    <script>
+        function safeNext() {
+            const next = new URLSearchParams(window.location.search).get('next');
+            // Only allow same-site relative paths
+            return next && next.startsWith('/') && !next.startsWith('//') ? next : null;
+        }
+
+        Auth.ready.then(user => {
+            if (user) window.location.replace(safeNext() || Auth.homeFor(user));
+        });
+
+        document.getElementById('login-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            if (!/^[^@\s]+@[^@\s]+\.com$/i.test(email)) return UI.showToast('Customer email must contain @ and end in .com.', 'warning');
+            if (!email || !password) {
+                UI.showToast('Enter your email and password.', 'warning');
+                return;
+            }
+
+            await UI.withBusy(document.getElementById('login-btn'), async () => {
+                try {
+                    const user = await Auth.login(email, password);
+                    UI.showToast('Login successful!', 'success');
+                    setTimeout(() => window.location.href = safeNext() || Auth.homeFor(user), 400);
+                } catch (err) {
+                    document.getElementById('password').value = '';
+                }
+            });
+        });
+    </script>
+</body>
+</html>

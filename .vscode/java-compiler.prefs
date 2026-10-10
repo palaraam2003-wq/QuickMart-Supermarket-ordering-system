@@ -1,0 +1,4 @@
+# Eclipse JDT compiler settings for the VS Code Java extension (see java.settings.url).
+# Spring's @NonNullApi packages flag every value coming from unannotated code (entity getters,
+# JDK/Jackson calls) as an "unchecked conversion"; keep the rest of null analysis on.
+org.eclipse.jdt.core.compiler.problem.nullUncheckedConversion=ignore

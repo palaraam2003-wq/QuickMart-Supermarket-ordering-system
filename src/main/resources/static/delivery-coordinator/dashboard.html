@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RapidMart — Delivery Coordinator</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/api.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand">🛒 Rapid<span>Mart</span> <span class="badge badge-info">COORDINATOR</span></a>
+        <div id="user-nav" class="nav-links"></div>
+    </nav>
+
+    <main class="container">
+        <h2>Delivery Coordination</h2>
+        <p class="muted small mt-1">Manage the driver team, configure time slot order limits, review assignments, and schedule deliveries.</p>
+
+        <!-- Driver Staff Management -->
+        <section class="glass-card mt-2">
+            <div class="row-between">
+                <div><h3>Delivery Staff</h3><p class="muted small mt-1">Driver accounts and availability</p></div>
+                <button type="button" id="new-driver" class="btn btn-primary btn-sm">+ Add Delivery Staff</button>
+            </div>
+
+            <form id="driver-form" class="panel" hidden novalidate>
+                <div class="row-between">
+                    <h4 id="driver-form-title">Add Delivery Staff</h4>
+                    <button type="button" id="driver-cancel" class="btn btn-secondary btn-sm">Cancel</button>
+                </div>
+                <input type="hidden" id="driverId">
+                <div class="grid-2 mt-1">
+                    <div class="form-group"><label for="driverName">Full Name</label><input type="text" id="driverName" class="form-control" required maxlength="255"></div>
+                    <div class="form-group"><label for="driverPhone">Phone</label><input type="tel" id="driverPhone" class="form-control" maxlength="50"></div>
+                </div>
+                <div id="driver-credentials" class="grid-2">
+                    <div class="form-group"><label for="driverEmail">Email</label><input type="email" id="driverEmail" class="form-control" required autocomplete="off"></div>
+                    <div class="form-group"><label for="driverPassword">Initial Password</label><input type="password" id="driverPassword" class="form-control" required minlength="8" autocomplete="new-password"></div>
+                </div>
+                <div id="driver-active-group" class="form-group row" hidden>
+                    <input type="checkbox" id="driverActive" checked>
+                    <label for="driverActive" style="margin: 0;">Account active</label>
+                </div>
+                <button type="submit" id="driver-save" class="btn btn-success">Save Delivery Staff</button>
+            </form>
+
+            <form id="driver-filter-form" class="panel" novalidate>
+                <div class="grid-3">
+                    <div class="form-group"><label for="driver-search">Search</label><input type="search" id="driver-search" class="form-control" placeholder="Name, email, or phone"></div>
+                    <div class="form-group"><label for="driver-status">Account Status</label><select id="driver-status" class="form-control"><option value="">All accounts</option><option value="true">Active</option><option value="false">Deactivated</option></select></div>
+                    <div class="form-group"><label for="driver-availability">Availability</label><select id="driver-availability" class="form-control"><option value="">All drivers</option><option value="true">Available</option><option value="false">Unavailable</option></select></div>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group"><label for="availability-date">Availability Date</label><input type="date" id="availability-date" class="form-control"></div>
+                    <div class="form-group"><label for="availability-slot">Delivery Slot</label><select id="availability-slot" class="form-control"></select></div>
+                </div>
+                <div class="row"><button type="submit" id="driver-filter-button" class="btn btn-primary btn-sm">Apply Filters</button><button type="button" id="driver-filter-reset" class="btn btn-secondary btn-sm">Reset</button></div>
+            </form>
+
+            <div id="drivers-container" class="table-responsive"><p class="muted">Loading&hellip;</p></div>
+
+            <div id="driver-assignments-panel" class="panel" hidden>
+                <div class="row-between"><h4 id="driver-assignments-title">Driver Assignments</h4><button type="button" id="driver-assignments-close" class="btn btn-secondary btn-sm">Close</button></div>
+                <div id="driver-assignments-container" class="table-responsive"><p class="muted">Loading&hellip;</p></div>
+            </div>
+        </section>
+
+        <!-- Driver Order Limits by Time Slot -->
+        <section class="glass-card section" id="slot-limits-section">
+            <div class="row-between">
+                <div>
+                    <h3>Driver Order Limits by Time Slot</h3>
+                    <p class="muted small mt-1">A driver can only be assigned to a time slot once a limit is set for that date and slot. A limit of 0 closes the slot for that driver.</p>
+                </div>
+            </div>
+
+            <form id="limit-config-form" class="panel mt-1" novalidate>
+                <div class="row-between">
+                    <h4 id="limit-form-title">Set Order Limit</h4>
+                    <button type="button" id="limit-cancel-edit" class="btn btn-secondary btn-sm" hidden>Cancel Edit</button>
+                </div>
+                <div class="grid-4 mt-1">
+                    <div class="form-group">
+                        <label for="limit-date">Delivery Date</label>
+                        <input type="date" id="limit-date" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="limit-slot">Time Slot</label>
+                        <select id="limit-slot" class="form-control" required></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="limit-driver">Driver</label>
+                        <select id="limit-driver" class="form-control" required>
+                            <option value="">Select driver</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="limit-max">Max Orders</label>
+                        <div class="stepper">
+                            <button type="button" class="btn btn-secondary btn-sm" data-step="-1" aria-label="Decrease max orders">&minus;</button>
+                            <input type="number" id="limit-max" class="form-control" min="0" max="50" step="1" value="3" required inputmode="numeric">
+                            <button type="button" class="btn btn-secondary btn-sm" data-step="1" aria-label="Increase max orders">+</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-1">
+                    <button type="submit" id="limit-save-btn" class="btn btn-primary btn-sm">Save Limit</button>
+                    <span id="limit-form-hint" class="muted small"></span>
+                </div>
+            </form>
+
+            <div class="row-between mt-2">
+                <h4>Capacity Overview</h4>
+                <div class="row limit-filters">
+                    <label for="limit-filter-date" class="muted small">Date</label>
+                    <input type="date" id="limit-filter-date" class="form-control inline-control">
+                    <select id="limit-filter-slot" class="form-control inline-control" aria-label="Filter by slot"></select>
+                    <select id="limit-filter-driver" class="form-control inline-control" aria-label="Filter by driver"><option value="">All drivers</option></select>
+                    <button type="button" id="limit-filter-upcoming" class="btn btn-secondary btn-sm">All upcoming</button>
+                </div>
+            </div>
+            <div id="slot-summary" class="slot-cards mt-1"></div>
+            <div id="slot-limits-container" class="table-responsive mt-1"><p class="muted">Loading limits…</p></div>
+        </section>
+
+        <!-- Delivery Scheduling & Tracking -->
+        <section class="glass-card section">
+            <div class="row-between">
+                <h3>Delivery Scheduling &amp; Tracking</h3>
+                <div class="row">
+                    <label for="status-filter" class="muted small">Show</label>
+                    <select id="status-filter" class="form-control inline-control">
+                        <option value="">All deliveries</option>
+                        <option value="PENDING">Pending (unassigned)</option>
+                        <option value="ASSIGNED">Assigned</option>
+                        <option value="OUT_FOR_DELIVERY">Out for delivery</option>
+                        <option value="OVERDUE">Overdue (Unfinished)</option>
+                        <option value="RESCHEDULED">Rescheduled</option>
+                        <option value="DELIVERED_ON_TIME">Delivered On Time</option>
+                        <option value="DELIVERED_LATE">Delivered Late</option>
+                        <option value="FAILED">Failed</option>
+                        <option value="DELIVERED">Delivered (All)</option>
+                        <option value="CANCELLED">Cancelled</option>
+                    </select>
+                </div>
+            </div>
+            <p class="muted small mt-1">Unpaid orders cannot be assigned. Overdue unfinished deliveries remain visible and can be rescheduled or reassigned.</p>
+            <div id="deliveries-container" class="table-responsive"><p class="muted">Loading…</p></div>
+        </section>
+
+        <!-- Delayed Deliveries Audit -->
+        <section class="glass-card section">
+            <div class="row-between">
+                <div>
+                    <h3>Delayed Deliveries Audit</h3>
+                    <p class="muted small mt-1">Record of deliveries completed after their expected time slot window.</p>
+                </div>
+            </div>
+            <div id="delayed-deliveries-container" class="table-responsive mt-1"><p class="muted">Loading delayed deliveries…</p></div>
+        </section>
+    </main>
+
+    <script>
+        let drivers = [];
+        const today = UI.isoDate(0);
+
+        function renderDeliveryStatusBadge(status) {
+            if (status === 'OVERDUE') {
+                return '<span class="badge badge-danger">OVERDUE</span>';
+            }
+            if (status === 'DELIVERED_LATE') {
+                return '<span class="badge badge-warning">DELIVERED LATE</span>';
+            }
+            if (status === 'DELIVERED_ON_TIME') {
+                return '<span class="badge badge-success">DELIVERED ON TIME</span>';
+            }
+            if (status === 'RESCHEDULED') {
+                return '<span class="badge badge-info">RESCHEDULED</span>';
+            }
+            return UI.statusBadge(status);
+        }
+
+        async function loadData() {
+            const container = document.getElementById('deliveries-container');
+            const status = document.getElementById('status-filter').value;
+            try {
+                const [staff, deliveries] = await Promise.all([
+                    API.request('/api/v1/delivery-coordinator/staff'),
+                    API.request('/api/v1/delivery-coordinator/deliveries' + (status ? `?status=${status}` : ''))
+                ]);
+                drivers = staff.filter(driver => driver.active);
+
+                if (window.populateLimitDrivers) window.populateLimitDrivers(drivers);
+
+                if (!deliveries.length) {
+                    container.innerHTML = '<p class="muted">No deliveries to show.</p>';
+                    return;
+                }
+
+                container.innerHTML = `
+                    <table>
+                        <thead>
+                            <tr><th>Order</th><th>Address</th><th>Payment</th><th>Status</th><th>Driver &amp; Schedule</th><th>Actions</th></tr>
+                        </thead>
+                        <tbody>
+                            ${deliveries.map(d => {
+                                const schedulable = ['PENDING', 'ASSIGNED', 'FAILED', 'OVERDUE', 'SCHEDULED', 'RESCHEDULED'].includes(d.deliveryStatus) && d.orderStatus !== 'CANCELLED';
+                                const unpaid = d.paymentMethod !== 'COD' && d.paymentStatus !== 'PAID';
+                                const isOverdue = d.deliveryStatus === 'OVERDUE';
+                                return `
+                                <tr>
+                                    <td><strong>${UI.escape(d.orderNumber)}</strong><div class="muted small">${UI.formatCurrency(d.totalAmount)}</div></td>
+                                    <td class="small">${UI.escape(d.deliveryStreet)}, ${UI.escape(d.deliveryCity)}<div class="muted">${UI.escape(d.deliveryPhone)}</div></td>
+                                    <td class="small">${UI.escape(d.paymentMethod)}<br>${UI.statusBadge(d.paymentStatus)}</td>
+                                    <td>${renderDeliveryStatusBadge(d.deliveryStatus)}
+                                        ${d.failureReason && d.deliveryStatus === 'FAILED' ? `<div class="muted small">Reason: ${UI.escape(d.failureReason)}</div>` : ''}
+                                        ${d.deliveryStatus === 'FAILED' ? `<div class="small">${d.returnedItemsChecked ? '✔ Returned items checked' : 'Returned items not checked'}</div>` : ''}
+                                        ${isOverdue ? '<div class="text-danger small fw-bold mt-1">⚠ Time slot passed - Requires Rescheduling</div>' : ''}
+                                    </td>
+                                    <td class="small">
+                                        ${schedulable && !unpaid ? `
+                                            <div class="row">
+                                                <select id="driver-${d.id}" class="form-control inline-control" aria-label="Driver">
+                                                    <option value="">Select driver</option>
+                                                    ${drivers.map(drv => `<option value="${drv.id}" ${drv.id === d.assignedStaffId ? 'selected' : ''}>${UI.escape(drv.fullName)}</option>`).join('')}
+                                                </select>
+                                                <input type="date" id="date-${d.id}" class="form-control inline-control" min="${today}" value="${UI.escape(d.scheduledDate < today ? today : d.scheduledDate)}" aria-label="Date">
+                                                <select id="slot-${d.id}" class="form-control inline-control" aria-label="Slot">${UI.slotOptions(d.scheduledSlot)}</select>
+                                            </div>` : `
+                                            ${UI.escape(d.assignedStaffName || 'Unassigned')}<div class="muted">${UI.escape(d.scheduledDate)} · ${UI.escape(UI.slotLabel(d.scheduledSlot))}</div>
+                                            ${schedulable && unpaid ? '<div class="text-danger">Awaiting payment verification</div>' : ''}`}
+                                    </td>
+                                    <td><div class="row">
+                                        ${schedulable && !unpaid ? `<button type="button" class="btn ${isOverdue ? 'btn-warning' : 'btn-primary'} btn-sm" data-assign="${d.id}">${['ASSIGNED', 'RESCHEDULED', 'OVERDUE'].includes(d.deliveryStatus) ? 'Reschedule / Reassign' : 'Assign'}</button>` : ''}
+                                        ${d.deliveryStatus === 'FAILED' && !d.returnedItemsChecked ? `<button type="button" class="btn btn-secondary btn-sm" data-checked="${d.id}">Returned Items Checked</button>` : ''}
+                                        ${d.deliveryStatus === 'FAILED' && d.returnedItemsChecked ? `<button type="button" class="btn btn-danger btn-sm" data-cancel="${d.id}">Cancel Order</button>` : ''}
+                                    </div></td>
+                                </tr>`;
+                            }).join('')}
+                        </tbody>
+                    </table>`;
+            } catch (e) {
+                UI.setError(container, 'Could not load deliveries.');
+            }
+        }
+
+        document.getElementById('status-filter').addEventListener('change', loadData);
+
+        document.getElementById('deliveries-container').addEventListener('click', async e => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+
+            if (btn.dataset.assign) {
+                const id = btn.dataset.assign;
+                const staffId = document.getElementById(`driver-${id}`).value;
+                const scheduledDate = document.getElementById(`date-${id}`).value;
+                const scheduledSlot = document.getElementById(`slot-${id}`).value;
+                if (!staffId) return UI.showToast('Please select a driver.', 'warning');
+                if (!scheduledDate || scheduledDate < today) return UI.showToast('Choose today or a future date.', 'warning');
+                await UI.withBusy(btn, async () => {
+                    try {
+                        const params = new URLSearchParams({ staffId, scheduledDate, scheduledSlot });
+                        await API.request(`/api/v1/delivery-coordinator/deliveries/${id}/assign?${params}`, { method: 'POST' });
+                        UI.showToast('Driver assigned / rescheduled successfully.', 'success');
+                    } catch (err) { /* toast shown */ }
+                });
+                return Promise.all([loadData(), window.loadSlotLimits ? window.loadSlotLimits() : Promise.resolve()]);
+            }
+
+            if (btn.dataset.checked) {
+                await UI.withBusy(btn, async () => {
+                    try {
+                        await API.request(`/api/v1/delivery-coordinator/deliveries/${btn.dataset.checked}/returned-items-checked`, { method: 'POST' });
+                        UI.showToast('Returned items recorded as checked.', 'success');
+                    } catch (err) { /* toast shown */ }
+                });
+                return loadData();
+            }
+
+            if (btn.dataset.cancel) {
+                const reason = prompt('Cancellation reason:', 'Customer unreachable after failed delivery');
+                if (reason === null) return;
+                await UI.withBusy(btn, async () => {
+                    try {
+                        await API.request(`/api/v1/delivery-coordinator/deliveries/${btn.dataset.cancel}/cancel?reason=${encodeURIComponent(reason)}`, { method: 'POST' });
+                        UI.showToast('Order cancelled and stock restored.', 'info');
+                    } catch (err) { /* toast shown */ }
+                });
+                return loadData();
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (await Auth.requireRole(['DELIVERY_COORDINATOR', 'MANAGER'])) {
+                loadData();
+                UI.liveRefresh(loadData);
+            }
+        });
+    </script>
+    <script src="/delivery-coordinator/driver-management.js"></script>
+</body>
+</html>

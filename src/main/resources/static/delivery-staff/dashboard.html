@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RapidMart — Driver Portal</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/api.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand">🛒 Rapid<span>Mart</span> <span class="badge badge-info">DRIVER</span></a>
+        <div id="user-nav" class="nav-links"></div>
+    </nav>
+
+    <main class="container">
+        <h2>My Deliveries</h2>
+
+        <section class="grid-3 mt-2">
+            <div class="glass-card" style="text-align: center;">
+                <h4>Collected Today</h4>
+                <div id="stat-today" class="stat-value text-success">–</div>
+                <div id="stat-today-count" class="muted small"></div>
+            </div>
+            <div class="glass-card" style="text-align: center;">
+                <h4>Cash Not Yet Settled</h4>
+                <div id="stat-unsettled" class="stat-value" style="color: var(--accent-warning);">–</div>
+                <div id="stat-unsettled-count" class="muted small"></div>
+            </div>
+            <div class="glass-card" style="text-align: center;">
+                <h4>Active Deliveries</h4>
+                <div id="stat-active" class="stat-value" style="color: var(--accent-secondary);">–</div>
+            </div>
+        </section>
+
+        <div class="row mt-2">
+            <input type="checkbox" id="show-done">
+            <label for="show-done" class="small">Show completed and cancelled deliveries</label>
+        </div>
+        <div id="my-deliveries-container" class="grid-cards"><p class="muted">Loading…</p></div>
+    </main>
+
+    <script>
+        async function loadSummary() {
+            try {
+                const s = await API.request('/api/v1/delivery-staff/cod-summary');
+                document.getElementById('stat-today').textContent = UI.formatCurrency(s.collectedToday);
+                document.getElementById('stat-today-count').textContent = `${s.collectionsToday} COD collection(s)`;
+                document.getElementById('stat-unsettled').textContent = UI.formatCurrency(s.unsettledTotal);
+                document.getElementById('stat-unsettled-count').textContent = `${s.unsettledCount} awaiting cashier confirmation`;
+            } catch (e) { /* toast shown */ }
+        }
+
+        async function loadMyDeliveries() {
+            const container = document.getElementById('my-deliveries-container');
+            try {
+                const all = await API.request('/api/v1/delivery-staff/my-deliveries');
+                const active = all.filter(d => ['ASSIGNED', 'OUT_FOR_DELIVERY'].includes(d.deliveryStatus));
+                document.getElementById('stat-active').textContent = active.length;
+                const deliveries = document.getElementById('show-done').checked ? all : active;
+
+                if (!deliveries.length) {
+                    container.innerHTML = '<div class="glass-card"><p class="muted">No active deliveries assigned to you.</p></div>';
+                    return;
+                }
+
+                container.innerHTML = deliveries.map(d => {
+                    const isCod = d.paymentMethod === 'COD';
+                    return `
+                    <div class="glass-card">
+                        <div class="row-between" style="border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
+                            <strong>${UI.escape(d.orderNumber)}</strong>
+                            ${UI.statusBadge(d.deliveryStatus)}
+                        </div>
+                        <div style="margin: 1rem 0;">
+                            <p><strong>Address:</strong> ${UI.escape(d.deliveryStreet)}, ${UI.escape(d.deliveryCity)} ${UI.escape(d.deliveryPostalCode)}</p>
+                            <p><strong>Phone:</strong> <a href="tel:${encodeURIComponent(d.deliveryPhone)}" style="color: var(--accent-secondary);">${UI.escape(d.deliveryPhone)}</a></p>
+                            <p><strong>Slot:</strong> ${UI.escape(d.scheduledDate)} · ${UI.escape(d.scheduledSlot)}</p>
+                            <p><strong>Payment:</strong> ${UI.escape(d.paymentMethod)} ${UI.statusBadge(d.paymentStatus)}</p>
+                            ${isCod && d.deliveryStatus !== 'DELIVERED'
+                                ? `<p class="mt-1" style="font-size: 1.1rem;"><strong>Collect cash:</strong> <span class="text-success">${UI.formatCurrency(d.totalAmount)}</span></p>`
+                                : (!isCod ? '<p class="muted small mt-1">Prepaid — do not collect cash.</p>' : '')}
+                        </div>
+                        <div class="row">
+                            ${d.deliveryStatus === 'ASSIGNED' ? `<button type="button" data-out="${d.id}" class="btn btn-primary" style="flex: 1;">Start Delivery</button>` : ''}
+                            ${d.deliveryStatus === 'OUT_FOR_DELIVERY' ? `
+                                <button type="button" data-complete="${d.id}" data-cod="${isCod}" data-amount="${UI.escape(d.totalAmount)}" class="btn btn-success" style="flex: 1;">${isCod ? 'Cash Collected & Delivered' : 'Mark Delivered'}</button>
+                                <button type="button" data-fail="${d.id}" class="btn btn-danger" style="flex: 1;">Delivery Failed</button>` : ''}
+                        </div>
+                    </div>`;
+                }).join('');
+            } catch (e) {
+                UI.setError(container, 'Could not load your deliveries.');
+            }
+        }
+
+        function reload() {
+            return Promise.all([loadMyDeliveries(), loadSummary()]);
+        }
+
+        document.getElementById('show-done').addEventListener('change', loadMyDeliveries);
+
+        document.getElementById('my-deliveries-container').addEventListener('click', async e => {
+            const btn = e.target.closest('button');
+            if (!btn) return;
+
+            if (btn.dataset.out) {
+                await UI.withBusy(btn, async () => {
+                    try {
+                        await API.request(`/api/v1/delivery-staff/deliveries/${btn.dataset.out}/out-for-delivery`, { method: 'POST' });
+                        UI.showToast('Delivery started.', 'success');
+                    } catch (err) { /* toast shown */ }
+                });
+                return reload();
+            }
+
+            if (btn.dataset.complete) {
+                let query = '';
+                if (btn.dataset.cod === 'true') {
+                    const entered = prompt(`Enter the cash amount collected (must be exactly LKR ${btn.dataset.amount}):`, btn.dataset.amount);
+                    if (entered === null) return;
+                    query = `?collectedAmount=${encodeURIComponent(entered.trim())}`;
+                } else if (!confirm('Confirm the order was handed to the customer?')) {
+                    return;
+                }
+                await UI.withBusy(btn, async () => {
+                    try {
+                        await API.request(`/api/v1/delivery-staff/deliveries/${btn.dataset.complete}/complete${query}`, { method: 'POST' });
+                        UI.showToast('Delivery completed.', 'success');
+                    } catch (err) { /* toast shown */ }
+                });
+                return reload();
+            }
+
+            if (btn.dataset.fail) {
+                const reason = prompt('Reason the delivery failed (required):');
+                if (reason === null) return;
+                if (!reason.trim()) return UI.showToast('A reason is required.', 'warning');
+                await UI.withBusy(btn, async () => {
+                    try {
+                        await API.request(`/api/v1/delivery-staff/deliveries/${btn.dataset.fail}/failed?reason=${encodeURIComponent(reason.trim())}`, { method: 'POST' });
+                        UI.showToast('Failed delivery recorded. Return the items to the store.', 'info');
+                    } catch (err) { /* toast shown */ }
+                });
+                return reload();
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (await Auth.requireRole(['DELIVERY_STAFF'])) {
+                reload();
+                UI.liveRefresh(reload);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RapidMart — Checkout</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/api.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand">🛒 Rapid<span>Mart</span></a>
+        <ul class="nav-links">
+            <li><a href="/catalogue.html">Catalogue</a></li>
+        </ul>
+        <div id="user-nav" class="nav-links"></div>
+    </nav>
+
+    <main class="container" style="max-width: 820px;">
+        <h2>Order Checkout</h2>
+
+        <form id="checkout-form" class="glass-card mt-2" novalidate>
+            <h3 class="mb-1">1. Delivery Address</h3>
+            <div class="form-group">
+                <label for="address-select">Address</label>
+                <select id="address-select" class="form-control" required></select>
+                <p class="small mt-1">Need another address? <a href="/profile.html" style="color: var(--accent-secondary);">Manage addresses</a></p>
+            </div>
+
+            <h3 class="mb-1 mt-2">2. Delivery Date &amp; Time Slot</h3>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label for="deliveryDate">Delivery Date</label>
+                    <input type="date" id="deliveryDate" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label for="deliverySlot">Time Slot</label>
+                    <select id="deliverySlot" class="form-control" required></select>
+                </div>
+            </div>
+
+            <h3 class="mb-1 mt-2">3. Payment Method</h3>
+            <div class="form-group">
+                <label for="paymentMethod">Payment</label>
+                <select id="paymentMethod" class="form-control" required>
+                    <option value="COD">Cash on Delivery (COD)</option>
+                    <option value="EFT">Electronic Funds Transfer (EFT) — verified by a cashier</option>
+                    <option value="CARD_SIMULATION">Card — LOCAL SIMULATION (no real charge)</option>
+                    <option value="PAYPAL_SIMULATION">PayPal — LOCAL SIMULATION (no real charge)</option>
+                </select>
+                <p id="payment-note" class="notice small mt-1" hidden></p>
+            </div>
+
+            <h3 class="mb-1 mt-2">4. Offers &amp; Loyalty Points</h3>
+            <div class="grid-2">
+                <div class="form-group">
+                    <label for="offerCode">Offer Code (optional)</label>
+                    <input type="text" id="offerCode" class="form-control" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label for="redeemPoints">Redeem Points (1 pt = LKR 1) — <span id="points-available">0</span> available</label>
+                    <input type="number" id="redeemPoints" class="form-control" min="0" value="0">
+                </div>
+            </div>
+
+            <div id="order-summary-box" class="panel"><p class="muted">Loading cart…</p></div>
+            <p class="muted small mb-1">Offer discounts and the final total are recalculated by the server when you place the order.</p>
+
+            <button type="submit" id="submit-btn" class="btn btn-primary" style="width: 100%;">Place Order</button>
+        </form>
+    </main>
+
+    <script>
+        // One key per checkout page view: double clicks or retries return the same order instead of a duplicate.
+        const idempotencyKey = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : 'KEY-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+        let cart = null;
+        let availablePoints = 0;
+
+        const dateInput = document.getElementById('deliveryDate');
+        dateInput.min = UI.isoDate(1);
+        dateInput.value = UI.isoDate(1);
+        document.getElementById('deliverySlot').innerHTML = UI.slotOptions('MORNING_09_12');
+
+        function renderSummary() {
+            const box = document.getElementById('order-summary-box');
+            if (!cart) return;
+            if (!cart.items.length) {
+                box.innerHTML = '<p class="muted">Your cart is empty. <a href="/catalogue.html" style="color: var(--accent-secondary);">Browse products</a></p>';
+                document.getElementById('submit-btn').disabled = true;
+                return;
+            }
+            const points = Math.max(0, parseInt(document.getElementById('redeemPoints').value || '0', 10) || 0);
+            const estimate = Math.max(0, Number(cart.subtotal) - points);
+            box.innerHTML = `
+                ${cart.items.map(i => `<div class="row-between small"><span>${UI.escape(i.productName)} × ${i.quantity}</span><span>${UI.formatCurrency(i.lineTotal)}</span></div>`).join('')}
+                <hr style="border-color: var(--border-color); margin: 0.75rem 0;">
+                <div class="row-between"><span>Subtotal</span><strong>${UI.formatCurrency(cart.subtotal)}</strong></div>
+                ${points ? `<div class="row-between small"><span>Points discount</span><span>- ${UI.formatCurrency(points)}</span></div>` : ''}
+                <div class="row-between mt-1"><span>Estimated total (before offer)</span><strong style="color: var(--accent-secondary);">${UI.formatCurrency(estimate)}</strong></div>`;
+        }
+
+        async function loadData() {
+            try {
+                const [addresses, cartRes, account] = await Promise.all([
+                    API.request('/api/v1/customer/addresses'),
+                    API.request('/api/v1/customer/cart'),
+                    API.request('/api/v1/customer/loyalty/account')
+                ]);
+
+                const select = document.getElementById('address-select');
+                if (addresses.length) {
+                    select.innerHTML = addresses.map(a =>
+                        `<option value="${a.id}" ${a.isDefault ? 'selected' : ''}>${UI.escape(a.streetAddress)}, ${UI.escape(a.city)} (${UI.escape(a.phoneContact)})${a.isDefault ? ' — default' : ''}</option>`
+                    ).join('');
+                } else {
+                    select.innerHTML = '<option value="">No addresses yet — add one in your profile</option>';
+                }
+
+                availablePoints = account.currentPoints || 0;
+                document.getElementById('points-available').textContent = availablePoints;
+                document.getElementById('redeemPoints').max = availablePoints;
+
+                cart = cartRes;
+                renderSummary();
+            } catch (e) {
+                UI.setError(document.getElementById('order-summary-box'), 'Could not load checkout details.');
+            }
+        }
+
+        document.getElementById('redeemPoints').addEventListener('input', renderSummary);
+
+        document.getElementById('paymentMethod').addEventListener('change', e => {
+            const note = document.getElementById('payment-note');
+            const notes = {
+                EFT: 'Your order stays "Awaiting payment" until a cashier verifies your bank transfer.',
+                CARD_SIMULATION: 'Demo only: this is a local simulation. No card details are collected and no money is charged.',
+                PAYPAL_SIMULATION: 'Demo only: this is a local simulation. No PayPal account is used and no money is charged.'
+            };
+            note.textContent = notes[e.target.value] || '';
+            note.hidden = !notes[e.target.value];
+        });
+
+        document.getElementById('checkout-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const addressId = parseInt(document.getElementById('address-select').value, 10);
+            const deliveryDate = dateInput.value;
+            const redeemPoints = parseInt(document.getElementById('redeemPoints').value || '0', 10);
+
+            if (!addressId) return UI.showToast('Please add and select a delivery address.', 'warning');
+            if (!deliveryDate || deliveryDate < dateInput.min) return UI.showToast('Choose a delivery date from tomorrow onwards.', 'warning');
+            if (!Number.isInteger(redeemPoints) || redeemPoints < 0) return UI.showToast('Redeemed points must be zero or more.', 'warning');
+            if (redeemPoints > availablePoints) return UI.showToast(`You only have ${availablePoints} points.`, 'warning');
+
+            await UI.withBusy(document.getElementById('submit-btn'), async () => {
+                try {
+                    const order = await API.request('/api/v1/customer/orders/checkout', {
+                        method: 'POST',
+                        body: {
+                            addressId,
+                            deliveryDate,
+                            deliverySlot: document.getElementById('deliverySlot').value,
+                            paymentMethod: document.getElementById('paymentMethod').value,
+                            offerCode: document.getElementById('offerCode').value.trim() || null,
+                            redeemPoints,
+                            idempotencyKey
+                        }
+                    });
+                    UI.showToast(`Order ${order.orderNumber} placed! Total ${UI.formatCurrency(order.totalAmount)}`, 'success');
+                    setTimeout(() => window.location.href = `/orders.html?placed=${encodeURIComponent(order.orderNumber)}`, 1200);
+                } catch (err) { /* toast shown */ }
+            });
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (await Auth.requireRole(['CUSTOMER'])) loadData();
+        });
+    </script>
+</body>
+</html>

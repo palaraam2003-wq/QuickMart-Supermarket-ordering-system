@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RapidMart — Cart</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/api.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand">🛒 Rapid<span>Mart</span></a>
+        <ul class="nav-links">
+            <li><a href="/catalogue.html">Catalogue</a></li>
+        </ul>
+        <div id="user-nav" class="nav-links"></div>
+    </nav>
+
+    <main class="container" style="max-width: 900px;">
+        <h2>Your Shopping Cart</h2>
+        <div class="glass-card mt-2">
+            <div id="cart-container"><p class="muted">Loading cart…</p></div>
+        </div>
+    </main>
+
+    <script>
+        async function loadCart() {
+            const container = document.getElementById('cart-container');
+            try {
+                const cart = await API.request('/api/v1/customer/cart');
+
+                if (!cart.items.length) {
+                    container.innerHTML = `
+                        <div style="text-align: center; padding: 2rem;">
+                            <p class="muted" style="font-size: 1.1rem;">Your shopping cart is empty.</p>
+                            <a href="/catalogue.html" class="btn btn-primary mt-1">Browse Products</a>
+                        </div>`;
+                    return;
+                }
+
+                container.innerHTML = `
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr><th>Item</th><th>Unit Price</th><th>Quantity</th><th>Line Total</th><th>Action</th></tr>
+                            </thead>
+                            <tbody>
+                                ${cart.items.map(item => `
+                                    <tr>
+                                        <td><div class="cart-item">
+                                            ${item.imageUrl ? `<img class="cart-thumb" src="${UI.escape(item.imageUrl)}" alt="" loading="lazy" onerror="this.remove()">` : ''}
+                                            <div><strong>${UI.escape(item.productName)}</strong><br>
+                                            <span class="muted small">SKU: ${UI.escape(item.productSku)} · ${item.availableStock} in stock</span></div>
+                                        </div></td>
+                                        <td>${UI.formatCurrency(item.unitPrice)}</td>
+                                        <td>
+                                            <label class="sr-only" for="qty-${item.id}">Quantity</label>
+                                            <input type="number" id="qty-${item.id}" min="1" max="${item.availableStock}" value="${item.quantity}"
+                                                data-item="${item.id}" data-original="${item.quantity}" class="form-control inline-control qty-input" style="width: 80px;">
+                                        </td>
+                                        <td><strong>${UI.formatCurrency(item.lineTotal)}</strong></td>
+                                        <td><button type="button" data-remove="${item.id}" class="btn btn-danger btn-sm">Remove</button></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="row-between mt-2" style="padding-top: 1rem; border-top: 1px solid var(--border-color);">
+                        <div>
+                            <span class="muted">Cart Subtotal (${cart.totalItemsCount} items):</span>
+                            <span style="font-size: 1.6rem; font-weight: 700; color: var(--accent-secondary); margin-left: 0.5rem;">${UI.formatCurrency(cart.subtotal)}</span>
+                        </div>
+                        <a href="/checkout.html" class="btn btn-primary">Proceed to Checkout</a>
+                    </div>`;
+            } catch (e) {
+                UI.setError(container, 'Could not load your cart.');
+            }
+        }
+
+        const cartContainer = document.getElementById('cart-container');
+
+        cartContainer.addEventListener('change', async e => {
+            const input = e.target.closest('.qty-input');
+            if (!input) return;
+            const quantity = parseInt(input.value, 10);
+            if (!Number.isInteger(quantity) || quantity < 1) {
+                UI.showToast('Quantity must be at least 1. Use Remove to delete an item.', 'warning');
+                input.value = input.dataset.original;
+                return;
+            }
+            input.disabled = true;
+            try {
+                await API.request(`/api/v1/customer/cart/items/${input.dataset.item}`, { method: 'PUT', body: { quantity } });
+            } catch (err) { /* toast shown */ }
+            await loadCart();
+        });
+
+        cartContainer.addEventListener('click', async e => {
+            const btn = e.target.closest('button[data-remove]');
+            if (!btn) return;
+            await UI.withBusy(btn, async () => {
+                try {
+                    await API.request(`/api/v1/customer/cart/items/${btn.dataset.remove}`, { method: 'DELETE' });
+                    UI.showToast('Item removed from cart', 'info');
+                } catch (err) { /* toast shown */ }
+            });
+            await loadCart();
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (await Auth.requireRole(['CUSTOMER'])) {
+                loadCart();
+                UI.liveRefresh(loadCart);
+            }
+        });
+    </script>
+</body>
+</html>

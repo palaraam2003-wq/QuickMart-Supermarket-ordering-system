@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RapidMart — Supermarket Delivery</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/api.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+    <script src="/js/shop.js"></script>
+</head>
+<body>
+    <div class="promo-strip">
+        <span>🚚 Choose a delivery slot that suits you at checkout</span>
+        <span>⭐ Earn loyalty points on every completed order</span>
+    </div>
+    <nav class="navbar">
+        <a href="/" class="brand">🛒 Rapid<span>Mart</span></a>
+        <ul class="nav-links">
+            <li><a href="/catalogue.html">Catalogue</a></li>
+            <li><a href="/rewards.html">Rewards</a></li>
+            <li><a href="/feedback.html">Feedback</a></li>
+        </ul>
+        <div id="user-nav" class="nav-links"></div>
+    </nav>
+
+    <main class="container">
+        <section class="hero">
+            <div>
+                <span class="hero-tag">🌿 Fresh every day</span>
+                <h1>Fresh groceries,<br><span class="accent">delivered to your door</span></h1>
+                <p class="hero-lead">Fruits, vegetables, dairy, bakery and pantry staples from your local supermarket. Pick a delivery slot and track your order from checkout to doorstep.</p>
+                <form class="hero-search" action="/catalogue.html" method="get" role="search">
+                    <label for="hero-search-input" class="sr-only">Search products</label>
+                    <input type="search" id="hero-search-input" name="search" placeholder="Search rice, milk, apples…" autocomplete="off">
+                    <button type="submit" class="btn btn-primary">Search</button>
+                </form>
+                <div class="hero-actions">
+                    <a href="/catalogue.html" class="btn btn-light">Browse all products</a>
+                    <a href="/register.html" id="hero-cta" class="btn btn-accent">Create customer account</a>
+                </div>
+            </div>
+            <div class="hero-collage" aria-hidden="true">
+                <figure><img src="/images/products/tomatoes.webp" alt=""></figure>
+                <figure><img src="/images/products/avocado.webp" alt=""></figure>
+                <figure><img src="/images/products/farm-eggs.webp" alt=""></figure>
+                <figure><img src="/images/products/dragon-fruit.webp" alt=""></figure>
+            </div>
+        </section>
+
+        <div class="section-head">
+            <div>
+                <h2>Explore grocery aisles</h2>
+                <p class="muted small">Pick an aisle to filter today's picks below.</p>
+            </div>
+            <a id="view-all-link" href="/catalogue.html" class="link-arrow">View full catalogue →</a>
+        </div>
+        <div id="aisle-chips" class="aisle-chips" role="group" aria-label="Filter by aisle">
+            <p class="muted">Loading aisles…</p>
+        </div>
+
+        <div class="section-head">
+            <div>
+                <h2 id="picks-title">Today's picks</h2>
+                <p class="muted small">Freshly stocked items, ready for delivery.</p>
+            </div>
+        </div>
+        <div id="featured-grid" class="product-grid" aria-live="polite">
+            <p class="muted">Loading products…</p>
+        </div>
+
+        <section class="glass-card section feature-grid">
+            <div class="feature">
+                <span class="feature-icon">🕒</span>
+                <div><h3>Delivery slots</h3><p class="muted small">Morning, afternoon, evening or night: choose the slot that fits your day.</p></div>
+            </div>
+            <div class="feature">
+                <span class="feature-icon">📍</span>
+                <div><h3>Live order tracking</h3><p class="muted small">Follow each order from confirmation to your doorstep in My Orders.</p></div>
+            </div>
+            <div class="feature">
+                <span class="feature-icon">🎁</span>
+                <div><h3>Loyalty rewards</h3><p class="muted small">Collect points on completed orders and redeem them at checkout.</p></div>
+            </div>
+        </section>
+    </main>
+
+    <footer>&copy; 2026 RapidMart Supermarket. All rights reserved.</footer>
+
+    <script>
+        const PICKS = 8;
+        let products = [];
+        let activeCategoryId = '';
+
+        // Rotate the in-stock products with photos daily so the landing page does not always show the same items.
+        function todaysPicks(list) {
+            const ready = list.filter(p => p.availableStock > 0 && p.imageUrl);
+            const pool = ready.length >= PICKS ? ready : list;
+            if (pool.length <= PICKS) return pool;
+            const offset = Math.floor(Date.now() / 86400000) % pool.length;
+            return [...pool.slice(offset), ...pool.slice(0, offset)].slice(0, PICKS);
+        }
+
+        function renderPicks() {
+            const grid = document.getElementById('featured-grid');
+            const list = activeCategoryId
+                ? products.filter(p => String(p.categoryId) === activeCategoryId).slice(0, PICKS)
+                : todaysPicks(products);
+            grid.innerHTML = list.length ? list.map(Shop.card).join('')
+                : '<p class="muted">No products in this aisle yet.</p>';
+        }
+
+        function selectAisle(chip) {
+            activeCategoryId = chip.dataset.category;
+            document.querySelectorAll('#aisle-chips .chip').forEach(c => {
+                const active = c === chip;
+                c.classList.toggle('is-active', active);
+                c.setAttribute('aria-pressed', String(active));
+            });
+            document.getElementById('picks-title').textContent = activeCategoryId ? chip.dataset.name : "Today's picks";
+            document.getElementById('view-all-link').href = activeCategoryId
+                ? `/catalogue.html?categoryId=${encodeURIComponent(activeCategoryId)}` : '/catalogue.html';
+            renderPicks();
+        }
+
+        async function loadStorefront() {
+            const chips = document.getElementById('aisle-chips');
+            const grid = document.getElementById('featured-grid');
+            try {
+                const [categories, page] = await Promise.all([
+                    API.request('/api/v1/categories/public'),
+                    API.request('/api/v1/products/public?size=100')
+                ]);
+                products = page.content;
+                chips.innerHTML = [`<button type="button" class="chip is-active" data-category="" aria-pressed="true">🛍️ All aisles</button>`]
+                    .concat(categories.map(c => `<button type="button" class="chip" data-category="${UI.escape(c.id)}" data-name="${UI.escape(c.name)}" aria-pressed="false" title="${UI.escape(c.description || '')}">${Shop.categoryIcon(c.name)} ${UI.escape(c.name)}</button>`))
+                    .join('');
+                renderPicks();
+            } catch (e) {
+                UI.setError(chips, 'Could not load aisles.');
+                UI.setError(grid, 'Could not load products.');
+            }
+        }
+
+        document.getElementById('aisle-chips').addEventListener('click', e => {
+            const chip = e.target.closest('.chip');
+            if (chip) selectAisle(chip);
+        });
+        Shop.bind(document.getElementById('featured-grid'));
+
+        document.addEventListener('DOMContentLoaded', () => {
+            Auth.ready.then(user => {
+                if (!user) return;
+                const cta = document.getElementById('hero-cta');
+                if (Auth.hasRole('CUSTOMER') && !Auth.hasRole('MANAGER')) {
+                    cta.href = '/orders.html';
+                    cta.textContent = 'Track my orders';
+                } else {
+                    cta.hidden = true;
+                }
+            });
+            loadStorefront();
+        });
+    </script>
+</body>
+</html>

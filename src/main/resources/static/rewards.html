@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RapidMart — Rewards</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/api.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand">🛒 Rapid<span>Mart</span></a>
+        <ul class="nav-links">
+            <li><a href="/catalogue.html">Catalogue</a></li>
+            <li><a href="/rewards.html" class="active">Rewards</a></li>
+            <li><a href="/feedback.html">Feedback</a></li>
+        </ul>
+        <div id="user-nav" class="nav-links"></div>
+    </nav>
+
+    <main class="container" style="max-width: 860px;">
+        <h2>Loyalty &amp; Special Offers</h2>
+
+        <section class="glass-card mt-2" style="text-align: center; background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(99, 102, 241, 0.2));">
+            <h3 class="muted">Your Reward Balance</h3>
+            <div id="points-display" style="font-size: 3.5rem; font-weight: 800; color: var(--accent-secondary); margin: 0.5rem 0;">–</div>
+            <p id="tier-display"></p>
+            <p class="muted small mt-1">Earn 1 point per LKR 100 on delivered orders (tier multipliers apply). Redeem at checkout: 1 point = LKR 1.</p>
+        </section>
+
+        <section class="glass-card section">
+            <h3>Eligible Offers</h3>
+            <div id="offers-list" class="grid-cards"><p class="muted">Loading…</p></div>
+        </section>
+
+        <section class="glass-card section">
+            <h3>Points History</h3>
+            <div id="history" class="table-responsive mt-1"><p class="muted">Loading…</p></div>
+        </section>
+    </main>
+
+    <script>
+        async function loadLoyalty() {
+            try {
+                const [account, offers, history] = await Promise.all([
+                    API.request('/api/v1/customer/loyalty/account'),
+                    API.request('/api/v1/customer/loyalty/offers'),
+                    API.request('/api/v1/customer/loyalty/history')
+                ]);
+
+                document.getElementById('points-display').textContent = account.currentPoints;
+                document.getElementById('tier-display').innerHTML =
+                    `Tier: <span class="badge badge-info">${UI.escape(account.tierName)}</span> <span class="muted">(lifetime ${account.lifetimePoints} pts)</span>`;
+
+                document.getElementById('offers-list').innerHTML = offers.length ? offers.map(o => `
+                    <div class="glass-card">
+                        <span class="badge badge-success">${UI.escape(o.discountPercentage)}% OFF</span>
+                        <h4 style="margin: 0.5rem 0;">${UI.escape(o.title)}</h4>
+                        <p class="muted small">Code: <strong style="color: var(--accent-secondary);">${UI.escape(o.code)}</strong></p>
+                        <p class="muted small">Min order ${UI.formatCurrency(o.minOrderAmount)} · valid until ${UI.escape(o.endDate)}</p>
+                        ${o.eligibleTierName ? `<p class="muted small">${UI.escape(o.eligibleTierName)} tier offer</p>` : ''}
+                    </div>`).join('') : '<p class="muted">No offers are available right now.</p>';
+
+                document.getElementById('history').innerHTML = history.length ? `
+                    <table>
+                        <thead><tr><th>Date</th><th>Change</th><th>Balance</th><th>Reason</th><th>Reference</th></tr></thead>
+                        <tbody>${history.map(t => `
+                            <tr>
+                                <td>${UI.formatDateTime(t.createdAt)}</td>
+                                <td class="${t.pointsDelta >= 0 ? 'text-success' : 'text-danger'}"><strong>${t.pointsDelta > 0 ? '+' : ''}${t.pointsDelta}</strong></td>
+                                <td>${t.balanceAfter}</td>
+                                <td>${UI.escape(t.reason)}</td>
+                                <td class="muted small">${UI.escape(t.referenceId || '')}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>` : '<p class="muted">No points activity yet.</p>';
+            } catch (e) {
+                UI.setError(document.getElementById('offers-list'), 'Could not load loyalty details.');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (await Auth.requireRole(['CUSTOMER'])) {
+                loadLoyalty();
+                UI.liveRefresh(loadLoyalty);
+            }
+        });
+    </script>
+</body>
+</html>

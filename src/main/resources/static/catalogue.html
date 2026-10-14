@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RapidMart — Catalogue</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/api.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+    <script src="/js/shop.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand">🛒 Rapid<span>Mart</span></a>
+        <ul class="nav-links">
+            <li><a href="/catalogue.html" class="active">Catalogue</a></li>
+            <li><a href="/rewards.html">Rewards</a></li>
+            <li><a href="/feedback.html">Feedback</a></li>
+        </ul>
+        <div id="user-nav" class="nav-links"></div>
+    </nav>
+
+    <main class="container">
+        <h2>Product Catalogue</h2>
+        <form id="search-form" class="glass-card row" style="margin: 1.5rem 0; padding: 1rem 1.5rem;" role="search">
+            <label for="search-input" class="muted small">Search</label>
+            <input type="search" id="search-input" class="form-control" style="flex: 1; min-width: 200px;" placeholder="Product name…">
+            <label for="category-filter" class="muted small">Category</label>
+            <select id="category-filter" class="form-control" style="width: 200px;">
+                <option value="">All Categories</option>
+            </select>
+            <button type="submit" class="btn btn-primary">Search</button>
+        </form>
+
+        <div id="products-grid" class="product-grid"></div>
+        <div id="pager" class="row mt-2" style="justify-content: center;"></div>
+    </main>
+
+    <script>
+        let currentPage = 0;
+
+        async function loadCategories() {
+            try {
+                const categories = await API.request('/api/v1/categories/public');
+                const select = document.getElementById('category-filter');
+                categories.forEach(c => {
+                    const opt = document.createElement('option');
+                    opt.value = c.id;
+                    opt.textContent = c.name;
+                    select.appendChild(opt);
+                });
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('categoryId')) select.value = params.get('categoryId');
+                if (params.get('search')) document.getElementById('search-input').value = params.get('search');
+            } catch (e) { /* toast shown */ }
+        }
+
+        async function loadProducts(page = 0) {
+            const search = document.getElementById('search-input').value.trim();
+            const categoryId = document.getElementById('category-filter').value;
+            let url = `/api/v1/products/public?size=24&page=${page}`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
+            if (categoryId) url += `&categoryId=${encodeURIComponent(categoryId)}`;
+
+            const grid = document.getElementById('products-grid');
+            UI.setLoading(grid, 'Loading products…');
+            try {
+                const res = await API.request(url);
+                currentPage = res.number || 0;
+                if (!res.content.length) {
+                    grid.innerHTML = '<p class="muted">No products found.</p>';
+                } else {
+                    grid.innerHTML = res.content.map(Shop.card).join('');
+                }
+                renderPager(res);
+            } catch (e) {
+                UI.setError(grid, 'Could not load products.');
+            }
+        }
+
+        function renderPager(res) {
+            const pager = document.getElementById('pager');
+            pager.innerHTML = res.totalPages > 1 ? `
+                <button class="btn btn-secondary btn-sm" data-page="${currentPage - 1}" ${res.first ? 'disabled' : ''}>← Previous</button>
+                <span class="muted small">Page ${currentPage + 1} of ${res.totalPages}</span>
+                <button class="btn btn-secondary btn-sm" data-page="${currentPage + 1}" ${res.last ? 'disabled' : ''}>Next →</button>` : '';
+        }
+
+        document.getElementById('search-form').addEventListener('submit', e => { e.preventDefault(); loadProducts(0); });
+        document.getElementById('category-filter').addEventListener('change', () => loadProducts(0));
+        Shop.bind(document.getElementById('products-grid'));
+        document.getElementById('pager').addEventListener('click', e => {
+            const btn = e.target.closest('button[data-page]');
+            if (btn) loadProducts(Number(btn.dataset.page));
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadCategories();
+            await loadProducts(0);
+            UI.liveRefresh(() => loadProducts(currentPage));
+        });
+    </script>
+</body>
+</html>

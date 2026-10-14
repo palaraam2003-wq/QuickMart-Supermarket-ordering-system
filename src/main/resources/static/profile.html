@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RapidMart — Profile</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/api.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand">🛒 Rapid<span>Mart</span></a>
+        <ul class="nav-links">
+            <li><a href="/catalogue.html">Catalogue</a></li>
+        </ul>
+        <div id="user-nav" class="nav-links"></div>
+    </nav>
+
+    <main class="container" style="max-width: 820px;">
+        <h2>My Profile</h2>
+
+        <section class="glass-card mt-2">
+            <h3>Account Information</h3>
+            <div id="user-info-box" class="mt-1"><p class="muted">Loading…</p></div>
+
+            <form id="profile-form" class="panel" hidden novalidate>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="profileName">Full Name</label>
+                        <input type="text" id="profileName" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="profilePhone">Phone</label>
+                        <input type="tel" id="profilePhone" class="form-control" placeholder="+94770000000">
+                    </div>
+                </div>
+                <button type="submit" id="profile-save" class="btn btn-success">Save Profile</button>
+            </form>
+        </section>
+
+        <section id="email-section" class="glass-card section" hidden>
+            <h3>Change Email Address</h3>
+            <p class="muted small">Submit a request to change your sign-in email. Your current email stays active until the request is approved.</p>
+            <div id="email-pending" class="mt-1"></div>
+            <form id="email-form" class="panel" novalidate>
+                <div class="form-group">
+                    <label for="newEmail">New Email Address</label>
+                    <input type="email" id="newEmail" class="form-control" autocomplete="email" required>
+                </div>
+                <button type="submit" id="email-save" class="btn btn-primary">Request Email Change</button>
+            </form>
+        </section>
+
+        <section id="password-section" class="glass-card section" hidden>
+            <h3>Change Password</h3>
+            <form id="password-form" class="panel" novalidate>
+                <div class="form-group">
+                    <label for="currentPassword">Current Password</label>
+                    <input type="password" id="currentPassword" class="form-control" autocomplete="current-password" required>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="newPassword">New Password</label>
+                        <input type="password" id="newPassword" class="form-control" autocomplete="new-password" minlength="8" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="confirmPassword">Confirm New Password</label>
+                        <input type="password" id="confirmPassword" class="form-control" autocomplete="new-password" minlength="8" required>
+                    </div>
+                </div>
+                <p class="muted small">At least 8 characters.</p>
+                <button type="submit" id="password-save" class="btn btn-success">Change Password</button>
+            </form>
+        </section>
+
+        <section id="address-section" class="glass-card section" hidden>
+            <div class="row-between mb-1">
+                <h3>Delivery Addresses</h3>
+                <button type="button" id="toggle-address" class="btn btn-primary btn-sm">+ Add New Address</button>
+            </div>
+
+            <form id="address-form" class="panel" hidden novalidate>
+                <h4 id="address-form-title" class="mb-1">New Address</h4>
+                <input type="hidden" id="addressId">
+                <div class="form-group">
+                    <label for="streetAddress">Street Address</label>
+                    <input type="text" id="streetAddress" class="form-control" required>
+                </div>
+                <div class="grid-2">
+                    <div class="form-group">
+                        <label for="city">City</label>
+                        <input type="text" id="city" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="postalCode">Postal Code</label>
+                        <input type="text" id="postalCode" class="form-control" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="phoneContact">Phone Contact</label>
+                    <input type="tel" id="phoneContact" class="form-control" required>
+                </div>
+                <div class="form-group row">
+                    <input type="checkbox" id="isDefault">
+                    <label for="isDefault" style="margin: 0;">Set as default address</label>
+                </div>
+                <div class="row">
+                    <button type="submit" id="address-save" class="btn btn-success">Save Address</button>
+                    <button type="button" id="address-cancel" class="btn btn-secondary">Cancel</button>
+                </div>
+            </form>
+
+            <div id="addresses-list"></div>
+        </section>
+    </main>
+
+    <script>
+        let addresses = [];
+        // Managers have their own self-service profile API; customers keep the customer one.
+        let profileUrl = '/api/v1/customer/profile';
+
+        function formatDateTime(value) {
+            return value ? new Date(value).toLocaleString() : 'No previous sign-in recorded';
+        }
+
+        function renderUser(user) {
+            const lastLogin = Auth.hasRole('MANAGER')
+                ? `<p><strong>Last login:</strong> ${UI.escape(formatDateTime(user.lastLoginAt))}</p>` : '';
+            document.getElementById('user-info-box').innerHTML = `
+                <p><strong>Name:</strong> ${UI.escape(user.fullName)}</p>
+                <p><strong>Email:</strong> ${UI.escape(user.email)}</p>
+                <p><strong>Phone:</strong> ${UI.escape(user.phone || 'Not set')}</p>
+                <p><strong>Roles:</strong> ${user.roles.map(r => `<span class="badge badge-info">${UI.escape(Auth.roleLabel(r))}</span>`).join(' ')}</p>
+                ${lastLogin}`;
+            document.getElementById('profileName').value = user.fullName;
+            document.getElementById('profilePhone').value = user.phone || '';
+        }
+
+        function openAddressForm(address) {
+            document.getElementById('address-form').hidden = false;
+            document.getElementById('address-form-title').textContent = address ? 'Edit Address' : 'New Address';
+            document.getElementById('addressId').value = address ? address.id : '';
+            document.getElementById('streetAddress').value = address ? address.streetAddress : '';
+            document.getElementById('city').value = address ? address.city : '';
+            document.getElementById('postalCode').value = address ? address.postalCode : '';
+            document.getElementById('phoneContact').value = address ? address.phoneContact : '';
+            document.getElementById('isDefault').checked = address ? address.isDefault : addresses.length === 0;
+            document.getElementById('streetAddress').focus();
+        }
+
+        async function loadAddresses() {
+            const list = document.getElementById('addresses-list');
+            try {
+                addresses = await API.request('/api/v1/customer/addresses');
+                if (!addresses.length) {
+                    list.innerHTML = '<p class="muted">No addresses added yet. Add one to place orders.</p>';
+                    return;
+                }
+                list.innerHTML = addresses.map(a => `
+                    <div class="panel row-between">
+                        <div>
+                            <strong>${UI.escape(a.streetAddress)}</strong> ${a.isDefault ? '<span class="badge badge-success">Default</span>' : ''}<br>
+                            <span class="muted small">${UI.escape(a.city)}, ${UI.escape(a.postalCode)} · Phone: ${UI.escape(a.phoneContact)}</span>
+                        </div>
+                        <div class="row">
+                            <button type="button" data-edit="${a.id}" class="btn btn-secondary btn-sm">Edit</button>
+                            <button type="button" data-delete="${a.id}" class="btn btn-danger btn-sm">Delete</button>
+                        </div>
+                    </div>`).join('');
+            } catch (e) {
+                UI.setError(list, 'Could not load addresses.');
+            }
+        }
+
+        document.getElementById('profile-form').addEventListener('submit', async e => {
+            e.preventDefault();
+            const fullName = document.getElementById('profileName').value.trim();
+            const phone = document.getElementById('profilePhone').value.trim();
+            if (!fullName) return UI.showToast('Full name is required.', 'warning');
+            await UI.withBusy(document.getElementById('profile-save'), async () => {
+                try {
+                    const user = await API.request(profileUrl, { method: 'PUT', body: { fullName, phone } });
+                    renderUser(user);
+                    Auth.currentUser = user;
+                    Auth.updateNav();
+                    UI.showToast('Profile updated.', 'success');
+                } catch (err) { /* toast shown */ }
+            });
+        });
+
+        async function loadPendingEmailChange() {
+            const box = document.getElementById('email-pending');
+            try {
+                const pending = await API.request('/api/v1/manager/profile/email-change', { silent: true });
+                box.innerHTML = pending
+                    ? `<p><span class="badge badge-warning">Pending</span> Change to <strong>${UI.escape(pending.newEmail)}</strong> requested on ${UI.escape(formatDateTime(pending.requestedAt))}.</p>`
+                    : '';
+            } catch (e) {
+                box.innerHTML = '';
+            }
+        }
+
+        document.getElementById('email-form').addEventListener('submit', async e => {
+            e.preventDefault();
+            const newEmail = document.getElementById('newEmail').value.trim();
+            if (!newEmail) return UI.showToast('Enter the new email address.', 'warning');
+            await UI.withBusy(document.getElementById('email-save'), async () => {
+                try {
+                    await API.request('/api/v1/manager/profile/email-change', { method: 'POST', body: { newEmail } });
+                    document.getElementById('newEmail').value = '';
+                    UI.showToast('Email change requested.', 'success');
+                    await loadPendingEmailChange();
+                } catch (err) { /* toast shown */ }
+            });
+        });
+
+        document.getElementById('password-form').addEventListener('submit', async e => {
+            e.preventDefault();
+            const currentPassword = document.getElementById('currentPassword').value;
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            if (!currentPassword || !newPassword || !confirmPassword) {
+                return UI.showToast('Fill in all password fields.', 'warning');
+            }
+            if (newPassword.length < 8) return UI.showToast('New password must be at least 8 characters.', 'warning');
+            if (newPassword !== confirmPassword) return UI.showToast('New password and confirmation do not match.', 'warning');
+            await UI.withBusy(document.getElementById('password-save'), async () => {
+                try {
+                    await API.request('/api/v1/manager/profile/password', { method: 'POST', body: { currentPassword, newPassword, confirmPassword } });
+                    e.target.reset();
+                    UI.showToast('Password changed.', 'success');
+                } catch (err) { /* toast shown */ }
+            });
+        });
+
+        document.getElementById('toggle-address').addEventListener('click', () => openAddressForm(null));
+        document.getElementById('address-cancel').addEventListener('click', () => { document.getElementById('address-form').hidden = true; });
+
+        document.getElementById('address-form').addEventListener('submit', async e => {
+            e.preventDefault();
+            const body = {
+                streetAddress: document.getElementById('streetAddress').value.trim(),
+                city: document.getElementById('city').value.trim(),
+                postalCode: document.getElementById('postalCode').value.trim(),
+                phoneContact: document.getElementById('phoneContact').value.trim(),
+                isDefault: document.getElementById('isDefault').checked
+            };
+            if (!body.streetAddress || !body.city || !body.postalCode || !body.phoneContact) {
+                return UI.showToast('All address fields are required.', 'warning');
+            }
+            const id = document.getElementById('addressId').value;
+            await UI.withBusy(document.getElementById('address-save'), async () => {
+                try {
+                    await API.request(id ? `/api/v1/customer/addresses/${id}` : '/api/v1/customer/addresses', { method: id ? 'PUT' : 'POST', body });
+                    UI.showToast(id ? 'Address updated.' : 'Address added.', 'success');
+                    document.getElementById('address-form').hidden = true;
+                    await loadAddresses();
+                } catch (err) { /* toast shown */ }
+            });
+        });
+
+        document.getElementById('addresses-list').addEventListener('click', async e => {
+            const editBtn = e.target.closest('button[data-edit]');
+            const deleteBtn = e.target.closest('button[data-delete]');
+            if (editBtn) {
+                openAddressForm(addresses.find(a => String(a.id) === editBtn.dataset.edit));
+            }
+            if (deleteBtn) {
+                if (!confirm('Delete this address? Past orders keep their saved address.')) return;
+                await UI.withBusy(deleteBtn, async () => {
+                    try {
+                        await API.request(`/api/v1/customer/addresses/${deleteBtn.dataset.delete}`, { method: 'DELETE' });
+                        UI.showToast('Address removed.', 'info');
+                    } catch (err) { /* toast shown */ }
+                });
+                loadAddresses();
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            const user = await Auth.requireRole([]);
+            if (!user) return;
+            if (Auth.hasRole('MANAGER')) {
+                profileUrl = '/api/v1/manager/profile';
+                // Reload from the server so the last-login time is current.
+                try { renderUser(await API.request(profileUrl)); } catch (e) { renderUser(user); }
+                document.getElementById('profile-form').hidden = false;
+                document.getElementById('email-section').hidden = false;
+                document.getElementById('password-section').hidden = false;
+                loadPendingEmailChange();
+                return;
+            }
+            renderUser(user);
+            if (Auth.hasRole('CUSTOMER')) {
+                document.getElementById('profile-form').hidden = false;
+                document.getElementById('address-section').hidden = false;
+                loadAddresses();
+            } else {
+                document.getElementById('user-info-box').insertAdjacentHTML('beforeend',
+                    '<p class="muted small mt-1">Staff details are managed by a manager.</p>');
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RapidMart — My Orders &amp; Delivery Tracking</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <script src="/js/api.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <a href="/" class="brand">🛒 Rapid<span>Mart</span></a>
+        <ul class="nav-links">
+            <li><a href="/catalogue.html">Catalogue</a></li>
+            <li><a href="/orders.html" class="active">My Orders</a></li>
+        </ul>
+        <div id="user-nav" class="nav-links"></div>
+    </nav>
+
+    <main class="container">
+        <h2>My Orders &amp; Delivery Tracking</h2>
+        <div id="orders-container" class="mt-2"><p class="muted">Loading orders…</p></div>
+        <div id="pager" class="row mt-2" style="justify-content: center;"></div>
+    </main>
+
+    <script>
+        let currentPage = 0;
+        let autoOpened = false;
+        const openTrackingPanels = new Set();   // order ids whose tracking panel is expanded
+        const openActivityLogs = new Set();     // order ids whose activity log is expanded
+        const trackingCache = new Map();        // order id -> { tracking, order, fetchedAt }
+
+        // ---------------------------------------------------------------- tracking model
+        // Customer-facing steps. Internal statuses are folded into these four stages.
+        const STEPS = [
+            { label: 'Order placed', icon: '🧾' },
+            { label: 'Driver assigned', icon: '👤' },
+            { label: 'On the way', icon: '🚚' },
+            { label: 'Delivered', icon: '🏠' }
+        ];
+        const STAGE_OF = {
+            PENDING: 0, ORDER_CONFIRMED: 0, PROCESSING: 0, READY_FOR_DELIVERY: 0,
+            ASSIGNED: 1,
+            OUT_FOR_DELIVERY: 2, FAILED: 2, DELIVERY_FAILED: 2, RETURNED: 2,
+            DELIVERED: 3
+        };
+        const STATUS_TEXT = {
+            PENDING: 'Order placed', ORDER_CONFIRMED: 'Order confirmed', PROCESSING: 'Preparing your order',
+            READY_FOR_DELIVERY: 'Packed and ready', ASSIGNED: 'Driver assigned', OUT_FOR_DELIVERY: 'Out for delivery',
+            DELIVERED: 'Delivered', FAILED: 'Delivery attempt failed', DELIVERY_FAILED: 'Delivery attempt failed',
+            RETURNED: 'Returned to store', CANCELLED: 'Order cancelled'
+        };
+        const isFailedStatus = s => s === 'FAILED' || s === 'DELIVERY_FAILED';
+
+        // ---------------------------------------------------------------- formatting helpers
+        function parseLocalDate(iso) {                   // "2026-09-27" -> local midnight (no UTC shift)
+            if (!iso) return null;
+            const [y, m, d] = String(iso).split('-').map(Number);
+            return new Date(y, m - 1, d);
+        }
+        function friendlyDay(iso) {
+            const date = parseLocalDate(iso);
+            if (!date || isNaN(date)) return iso || '';
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const diff = Math.round((date - today) / 86400000);
+            if (diff === 0) return 'today';
+            if (diff === 1) return 'tomorrow';
+            if (diff === -1) return 'yesterday';
+            return date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+        }
+        function shortTime(ts) {
+            if (!ts) return '';
+            const d = new Date(ts);
+            if (isNaN(d)) return '';
+            const sameDay = d.toDateString() === new Date().toDateString();
+            return sameDay
+                ? d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+                : d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        }
+        function timeAgo(ts) {
+            if (!ts) return '';
+            const secs = Math.max(0, Math.round((Date.now() - new Date(ts)) / 1000));
+            if (secs < 60) return 'just now';
+            const mins = Math.round(secs / 60);
+            if (mins < 60) return `${mins} min ago`;
+            const hrs = Math.round(mins / 60);
+            if (hrs < 24) return `${hrs} h ago`;
+            return shortTime(ts);
+        }
+        // "Ruwan Driver (driver@rapidmart.local)" -> "Ruwan Driver"; the customer's own actions show as "You".
+        function actorName(updatedBy) {
+            if (!updatedBy || updatedBy === 'System') return '';
+            const me = Auth.currentUser && Auth.currentUser.email;
+            if (me && updatedBy.toLowerCase().includes(`(${me.toLowerCase()})`)) return 'You';
+            return updatedBy.replace(/\s*\([^)]*@[^)]*\)\s*$/, '');
+        }
+
+        // ---------------------------------------------------------------- tracking panel
+        function heroFor(t, order) {
+            const status = t.currentStatus;
+            const when = `${friendlyDay(t.scheduledDeliveryDate)}, ${UI.slotLabel(t.scheduledSlot)}`;
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const scheduled = parseLocalDate(t.scheduledDeliveryDate);
+            const overdue = scheduled && scheduled < today;
+            const lateNote = `Was due ${when}. It’s running late - we’ll update you as soon as it moves.`;
+            if (status === 'CANCELLED') {
+                return { cls: 'is-bad', icon: '✖', title: 'This order was cancelled',
+                         sub: 'Any payment made will be handled through your refund request.' };
+            }
+            if (status === 'DELIVERED') {
+                return { cls: 'is-done', icon: '✅', title: 'Delivered',
+                         sub: `Handed over ${shortTime(t.completedAt || t.lastUpdated)}. Enjoy your groceries!` };
+            }
+            if (isFailedStatus(status)) {
+                return { cls: 'is-bad', icon: '⚠️', title: 'We couldn’t deliver your order',
+                         sub: 'Our delivery team will contact you to arrange a new time.' };
+            }
+            if (status === 'RETURNED') {
+                return { cls: 'is-warn', icon: '📦', title: 'Returned to the store',
+                         sub: 'The package came back after a failed attempt. We will contact you.' };
+            }
+            if (status === 'OUT_FOR_DELIVERY') {
+                return { cls: '', icon: '🚚', title: 'On the way to you', sub: overdue ? lateNote : `Arriving ${when}` };
+            }
+            if (status === 'ASSIGNED') {
+                return { cls: overdue ? 'is-warn' : '', icon: '👤', title: 'A driver has been assigned',
+                         sub: overdue ? lateNote : `Scheduled for ${when}` };
+            }
+            if (order && order.status === 'AWAITING_PAYMENT') {
+                return { cls: 'is-warn', icon: '⏳', title: 'Waiting for payment verification',
+                         sub: 'We schedule your delivery as soon as your bank transfer is confirmed.' };
+            }
+            return { cls: overdue ? 'is-warn' : '', icon: '🧾', title: STATUS_TEXT[status] || 'Order placed',
+                     sub: overdue ? lateNote : `Preparing for delivery ${when}` };
+        }
+
+        function renderTracking(orderId) {
+            const cached = trackingCache.get(orderId);
+            if (!cached) return '<div class="trk-skeleton">Loading delivery tracking…</div>';
+            const { tracking: t, order, fetchedAt } = cached;
+            const history = t.history || [];
+            const status = t.currentStatus;
+            const cancelled = status === 'CANCELLED';
+            const failed = isFailedStatus(status) || status === 'RETURNED';
+
+            // Latest time each stage was reached, and how far the delivery got before a cancellation.
+            const stageTime = {};
+            let reached = 0;
+            history.forEach(h => {
+                const stage = STAGE_OF[h.status];
+                if (stage === undefined) return;
+                stageTime[stage] = h.timestamp;
+                reached = Math.max(reached, stage);
+            });
+            const current = cancelled ? reached : (STAGE_OF[status] ?? 0);
+
+            const steps = STEPS.map((step, i) => {
+                let cls = 'is-todo', mark = step.icon;
+                if (cancelled) {
+                    cls = i <= reached ? 'is-done' : 'is-cancelled';
+                    mark = i <= reached ? '✓' : '–';
+                } else if (status === 'DELIVERED' || i < current) {
+                    cls = 'is-done'; mark = '✓';
+                } else if (i === current) {
+                    cls = failed ? 'is-failed' : 'is-current';
+                    mark = failed ? '!' : step.icon;
+                }
+                const time = i <= current && stageTime[i] ? shortTime(stageTime[i]) : '';
+                return `<li class="trk-step ${cls}" ${i === current && !cancelled ? 'aria-current="step"' : ''}>
+                            <span class="trk-dot" aria-hidden="true">${mark}</span>
+                            <div class="trk-step-label">${step.label}</div>
+                            <div class="trk-step-time">${UI.escape(time)}</div>
+                        </li>`;
+            }).join('');
+
+            const hero = heroFor(t, order);
+            const lastCancel = [...history].reverse().find(h => h.status === 'CANCELLED');
+
+            let alert = '';
+            if (failed) {
+                alert = `<div class="trk-alert is-bad"><strong>Reason given by the driver</strong>
+                         ${UI.escape(t.failureReason || 'The delivery could not be completed.')}</div>`;
+            } else if (cancelled) {
+                alert = `<div class="trk-alert is-bad"><strong>Cancelled ${UI.escape(shortTime(lastCancel ? lastCancel.timestamp : t.lastUpdated))}</strong>
+                         ${UI.escape(lastCancel && lastCancel.statusMessage ? lastCancel.statusMessage : 'This delivery will not go ahead.')}</div>`;
+            } else if (order && order.status === 'AWAITING_PAYMENT') {
+                alert = `<div class="trk-alert"><strong>Payment pending</strong>
+                         Your ${UI.escape(order.paymentMethod || '')} payment is being verified by our cashier.</div>`;
+            }
+
+            const driverCard = t.driverName
+                ? `<div class="trk-card-value">${UI.escape(t.driverName)}</div>
+                   ${t.driverPhone && !cancelled && status !== 'DELIVERED'
+                        ? `<a class="trk-call" href="tel:${UI.escape(t.driverPhone)}">📞 Call ${UI.escape(t.driverPhone)}</a>` : ''}`
+                : `<div class="trk-card-value">Not assigned yet</div>
+                   <div class="trk-card-note">You’ll see your driver here once one is assigned.</div>`;
+
+            const events = [...history].reverse().map(h => {
+                const by = actorName(h.updatedBy);
+                const bad = isFailedStatus(h.status) || h.status === 'CANCELLED';
+                const title = STATUS_TEXT[h.status] || h.status;
+                const msg = h.statusMessage && h.statusMessage !== title ? h.statusMessage : '';
+                return `<li class="trk-event ${bad ? 'is-bad' : ''}">
+                            <div class="trk-event-head">
+                                <span class="trk-event-title">${UI.escape(title)}</span>
+                                <time class="trk-event-time" datetime="${UI.escape(h.timestamp)}" title="${UI.escape(UI.formatDateTime(h.timestamp))}">${UI.escape(shortTime(h.timestamp))}</time>
+                            </div>
+                            ${msg || by ? `<div class="trk-event-msg">${UI.escape(msg)}${msg && by ? ' · ' : ''}${by ? 'by ' + UI.escape(by) : ''}</div>` : ''}
+                        </li>`;
+            }).join('');
+
+            const live = !cancelled && status !== 'DELIVERED';
+            return `
+                <div class="trk-hero ${hero.cls}">
+                    <div class="trk-hero-icon" aria-hidden="true">${hero.icon}</div>
+                    <div class="trk-hero-text">
+                        <div class="trk-hero-title">${UI.escape(hero.title)}</div>
+                        <div class="trk-hero-sub">${UI.escape(hero.sub)}</div>
+                    </div>
+                    <div class="trk-hero-side">
+                        <span class="trk-live ${live ? '' : 'is-paused'}" title="Last checked ${UI.escape(UI.formatDateTime(fetchedAt))}">
+                            ${live ? 'Live' : 'Final'} · updated ${UI.escape(timeAgo(t.lastUpdated))}</span>
+                        <button type="button" class="btn btn-secondary btn-sm" data-refresh-tracking="${orderId}">↻ Refresh</button>
+                    </div>
+                </div>
+
+                <ol class="trk-steps" aria-label="Delivery progress">${steps}</ol>
+                ${alert}
+
+                <div class="trk-cards">
+                    <div class="trk-card">
+                        <div class="trk-card-label">Delivery window</div>
+                        <div class="trk-card-value">${UI.escape(UI.formatDate(parseLocalDate(t.scheduledDeliveryDate)) || 'To be scheduled')}</div>
+                        <div class="trk-card-note">${UI.escape(UI.slotLabel(t.scheduledSlot))}</div>
+                    </div>
+                    <div class="trk-card">
+                        <div class="trk-card-label">Your driver</div>
+                        ${driverCard}
+                    </div>
+                    <div class="trk-card">
+                        <div class="trk-card-label">Delivering to</div>
+                        <div class="trk-card-value">${UI.escape(t.deliveryAddress || '')}</div>
+                        ${order && order.deliveryPhone ? `<div class="trk-card-note">Contact: ${UI.escape(order.deliveryPhone)}</div>` : ''}
+                    </div>
+                </div>
+
+                ${history.length ? `
+                <details class="trk-log" data-log="${orderId}" ${openActivityLogs.has(orderId) ? 'open' : ''}>
+                    <summary>Tracking history (${history.length} update${history.length === 1 ? '' : 's'})</summary>
+                    <ol class="trk-events">${events}</ol>
+                </details>` : ''}`;
+        }
+
+        async function refreshTracking(orderId, order) {
+            const panel = document.getElementById(`tracking-panel-${orderId}`);
+            try {
+                const tracking = await API.request(`/api/v1/customer/orders/${orderId}/tracking`, { silent: true });
+                const prev = trackingCache.get(orderId);
+                trackingCache.set(orderId, { tracking, order: order || (prev && prev.order), fetchedAt: new Date() });
+                if (panel && !panel.hidden) panel.innerHTML = renderTracking(orderId);
+            } catch (err) {
+                if (!panel || panel.hidden) return;
+                if (trackingCache.has(orderId)) return;   // keep the last good view on a transient failure
+                panel.innerHTML = `<div class="trk-error">
+                        <span class="text-danger small">Tracking is unavailable right now${err && err.message ? ': ' + UI.escape(err.message) : '.'}</span>
+                        <button type="button" class="btn btn-secondary btn-sm" data-refresh-tracking="${orderId}">Try again</button>
+                    </div>`;
+            }
+        }
+
+        // ---------------------------------------------------------------- order list
+        const ordersById = new Map();
+
+        async function loadOrders(page = 0) {
+            const container = document.getElementById('orders-container');
+            try {
+                const [res, refunds] = await Promise.all([
+                    API.request(`/api/v1/customer/orders?page=${page}&size=10`),
+                    API.request('/api/v1/customer/refunds')
+                ]);
+                currentPage = res.number || 0;
+                const refundByOrder = Object.fromEntries(refunds.map(r => [r.orderId, r]));
+
+                if (!res.content.length) {
+                    container.innerHTML = '<div class="glass-card"><p class="muted">No orders yet. <a href="/catalogue.html" style="color: var(--accent-secondary);">Start shopping</a></p></div>';
+                    document.getElementById('pager').innerHTML = '';
+                    return;
+                }
+
+                const placed = new URLSearchParams(window.location.search).get('placed');
+                res.content.forEach(o => ordersById.set(o.id, o));
+
+                // First visit: open tracking for the order just placed, or the newest order still in progress.
+                if (!autoOpened) {
+                    autoOpened = true;
+                    const target = res.content.find(o => o.orderNumber === placed)
+                        || res.content.find(o => o.status !== 'DELIVERED' && o.status !== 'CANCELLED');
+                    if (target) openTrackingPanels.add(target.id);
+                }
+
+                container.innerHTML = res.content.map(order => {
+                    const refund = refundByOrder[order.id];
+                    const canCancel = (order.status === 'AWAITING_PAYMENT' || order.status === 'CONFIRMED') && order.paymentStatus !== 'PAID';
+                    const canRefund = order.paymentStatus === 'PAID' && !refund && order.status !== 'OUT_FOR_DELIVERY';
+                    const isOpen = openTrackingPanels.has(order.id);
+
+                    return `
+                    <article class="glass-card" style="margin-bottom: 1.5rem; ${order.orderNumber === placed ? 'border-color: var(--accent-success);' : ''}">
+                        <div class="row-between" style="border-bottom: 1px solid var(--border-color); padding-bottom: 0.75rem; margin-bottom: 1rem;">
+                            <div>
+                                <strong style="font-size: 1.1rem; color: var(--accent-secondary);">${UI.escape(order.orderNumber)}</strong>
+                                <span class="muted small">placed ${UI.formatDateTime(order.createdAt)}</span>
+                            </div>
+                            <div class="order-card-actions">
+                                ${UI.statusBadge(order.status)}
+                                <button type="button" data-toggle-tracking="${order.id}" class="btn btn-secondary btn-sm track-toggle"
+                                        aria-expanded="${isOpen}" aria-controls="tracking-panel-${order.id}">
+                                    ${isOpen ? 'Hide tracking ▲' : '🚚 Track delivery ▼'}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="grid-2">
+                            <div>
+                                <h4>Items</h4>
+                                <ul class="muted" style="margin: 0.5rem 0 1rem 1.25rem;">
+                                    ${order.items.map(item => `<li>${UI.escape(item.productName)} × ${item.quantity} (${UI.formatCurrency(item.lineTotal)})</li>`).join('')}
+                                </ul>
+                                <p class="muted small"><strong>Delivery Address:</strong> ${UI.escape(order.deliveryStreet)}, ${UI.escape(order.deliveryCity)} ${UI.escape(order.deliveryPostalCode)} (${UI.escape(order.deliveryPhone)})</p>
+                                <p class="muted small"><strong>Delivery:</strong> ${UI.escape(UI.formatDate(parseLocalDate(order.deliveryDate)))} · ${UI.escape(UI.slotLabel(order.deliverySlot))}</p>
+                                <p class="muted small"><strong>Payment:</strong> ${UI.escape(order.paymentMethod)} ${UI.statusBadge(order.paymentStatus)}
+                                    ${order.billNumber ? ` · <strong>Bill:</strong> ${UI.escape(order.billNumber)}` : ''}</p>
+                                ${refund ? `<p class="muted small"><strong>Refund request:</strong> ${UI.statusBadge(refund.refundStatus)} ${refund.cashierNotes ? '— ' + UI.escape(refund.cashierNotes) : ''}</p>` : ''}
+                            </div>
+                            <div style="text-align: right; display: flex; flex-direction: column; justify-content: space-between; gap: 1rem;">
+                                <div>
+                                    <div class="muted small">Subtotal: ${UI.formatCurrency(order.subtotal)}</div>
+                                    ${Number(order.offerDiscount) ? `<div class="muted small">Offer Discount: − ${UI.formatCurrency(order.offerDiscount)}</div>` : ''}
+                                    ${Number(order.pointDiscount) ? `<div class="muted small">Point Discount: − ${UI.formatCurrency(order.pointDiscount)}</div>` : ''}
+                                    <div class="muted small">Tax (${order.taxPercentage != null ? order.taxPercentage : 0}%): ${UI.formatCurrency(order.taxAmount)}</div>
+                                    <div class="muted small">Delivery Charge: ${UI.formatCurrency(order.deliveryCharge)}</div>
+                                    <div style="font-size: 1.5rem; font-weight: 700; color: var(--accent-secondary); margin-top: 0.25rem;">${UI.formatCurrency(order.totalAmount)}</div>
+                                </div>
+                                <div class="row" style="justify-content: flex-end;">
+                                    ${canCancel ? `<button type="button" data-cancel="${order.id}" class="btn btn-secondary btn-sm">Cancel Order</button>` : ''}
+                                    ${canRefund ? `<button type="button" data-refund="${order.id}" class="btn btn-danger btn-sm">Request Refund</button>` : ''}
+                                </div>
+                            </div>
+                        </div>
+
+                        <section id="tracking-panel-${order.id}" class="tracking-container" aria-live="polite"
+                                 aria-label="Delivery tracking for ${UI.escape(order.orderNumber)}" ${isOpen ? '' : 'hidden'}>
+                            ${isOpen ? renderTracking(order.id) : ''}
+                        </section>
+                    </article>`;
+                }).join('');
+
+                document.getElementById('pager').innerHTML = res.totalPages > 1 ? `
+                    <button class="btn btn-secondary btn-sm" data-page="${currentPage - 1}" ${res.first ? 'disabled' : ''}>← Previous</button>
+                    <span class="muted small">Page ${currentPage + 1} of ${res.totalPages}</span>
+                    <button class="btn btn-secondary btn-sm" data-page="${currentPage + 1}" ${res.last ? 'disabled' : ''}>Next →</button>` : '';
+
+                // Open panels were redrawn from cache (no flicker); now fetch the latest status for each.
+                openTrackingPanels.forEach(id => refreshTracking(id, ordersById.get(id)));
+            } catch (e) {
+                UI.setError(container, 'Could not load your orders.');
+            }
+        }
+
+        // ---------------------------------------------------------------- events
+        const ordersContainer = document.getElementById('orders-container');
+
+        // Remember which activity logs are expanded so live refreshes keep them open.
+        ordersContainer.addEventListener('toggle', e => {
+            const log = e.target.closest && e.target.closest('details[data-log]');
+            if (!log) return;
+            const id = Number(log.dataset.log);
+            log.open ? openActivityLogs.add(id) : openActivityLogs.delete(id);
+        }, true);
+
+        ordersContainer.addEventListener('click', async e => {
+            const cancelBtn = e.target.closest('button[data-cancel]');
+            const refundBtn = e.target.closest('button[data-refund]');
+            const toggleBtn = e.target.closest('button[data-toggle-tracking]');
+            const refreshBtn = e.target.closest('button[data-refresh-tracking]');
+
+            if (toggleBtn) {
+                const orderId = Number(toggleBtn.dataset.toggleTracking);
+                const panel = document.getElementById(`tracking-panel-${orderId}`);
+                if (!panel) return;
+                const opening = !openTrackingPanels.has(orderId);
+                opening ? openTrackingPanels.add(orderId) : openTrackingPanels.delete(orderId);
+                panel.hidden = !opening;
+                toggleBtn.setAttribute('aria-expanded', String(opening));
+                toggleBtn.textContent = opening ? 'Hide tracking ▲' : '🚚 Track delivery ▼';
+                if (opening) {
+                    panel.innerHTML = renderTracking(orderId);
+                    await refreshTracking(orderId, ordersById.get(orderId));
+                }
+                return;
+            }
+
+            if (refreshBtn) {
+                const orderId = Number(refreshBtn.dataset.refreshTracking);
+                trackingCache.delete(orderId);
+                await UI.withBusy(refreshBtn, () => refreshTracking(orderId, ordersById.get(orderId)));
+                if (trackingCache.has(orderId)) UI.showToast('Tracking updated.', 'info');
+                return;
+            }
+
+            if (cancelBtn) {
+                if (!confirm('Cancel this order? Stock and any redeemed points will be returned.')) return;
+                await UI.withBusy(cancelBtn, async () => {
+                    try {
+                        await API.request(`/api/v1/customer/orders/${cancelBtn.dataset.cancel}/cancel`, { method: 'POST' });
+                        UI.showToast('Order cancelled.', 'info');
+                    } catch (err) { /* toast shown */ }
+                });
+                loadOrders(currentPage);
+            }
+
+            if (refundBtn) {
+                const reason = prompt('Please enter the reason for your refund request:');
+                if (reason === null) return;
+                if (!reason.trim()) return UI.showToast('A reason is required.', 'warning');
+                await UI.withBusy(refundBtn, async () => {
+                    try {
+                        await API.request('/api/v1/customer/refunds', { method: 'POST', body: { orderId: Number(refundBtn.dataset.refund), reason: reason.trim() } });
+                        UI.showToast('Refund request submitted to the cashier.', 'success');
+                    } catch (err) { /* toast shown */ }
+                });
+                loadOrders(currentPage);
+            }
+        });
+
+        document.getElementById('pager').addEventListener('click', e => {
+            const btn = e.target.closest('button[data-page]');
+            if (btn) loadOrders(Number(btn.dataset.page));
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (await Auth.requireRole(['CUSTOMER'])) {
+                loadOrders(0);
+                // Re-reads orders and open tracking panels every 15 s while the tab is visible.
+                UI.liveRefresh(() => loadOrders(currentPage));
+            }
+        });
+    </script>
+</body>
+</html>

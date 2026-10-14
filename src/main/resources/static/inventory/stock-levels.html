@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RapidMart &mdash; Stock Levels</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/inventory/inventory.css">
+    <script src="/js/api.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+</head>
+<body data-inventory-page="stock-levels">
+    <nav class="navbar">
+        <a href="/" class="brand">&#128722; Rapid<span>Mart</span> <span class="badge badge-info">INVENTORY</span></a>
+        <div id="user-nav" class="nav-links"></div>
+    </nav>
+    <main class="container">
+        <header class="inventory-heading">
+            <div><h2>Stock Levels</h2><p class="muted page-intro">Review current quantities and set the minimum and maximum levels used for stock alerts and receipts.</p></div>
+        </header>
+        <nav id="inventory-section-nav" class="inventory-tabs" aria-label="Inventory sections"></nav>
+
+        <form id="limits-form" class="glass-card section" hidden novalidate>
+            <div class="row-between"><div><h3>Update Stock Limits</h3><p id="limits-product" class="muted small mt-1"></p></div><button type="button" id="limits-cancel" class="btn btn-secondary btn-sm">Cancel</button></div>
+            <input type="hidden" id="limitsProductId">
+            <div class="grid-2 mt-1">
+                <div class="form-group"><label for="minimumLevel">Minimum Level</label><input type="number" id="minimumLevel" class="form-control" min="0" required></div>
+                <div class="form-group"><label for="maximumLevel">Maximum Level</label><input type="number" id="maximumLevel" class="form-control" min="1" required></div>
+            </div>
+            <button type="submit" id="limits-save" class="btn btn-success">Save Limits</button>
+        </form>
+
+        <section class="glass-card section">
+            <div class="row-between"><h3>All Product Stock</h3><a class="btn btn-secondary btn-sm" href="/inventory/stock-operations.html">Create Restock Request</a></div>
+            <div class="inventory-search mt-1" role="search">
+                <label for="stock-search" class="sr-only">Search stock levels</label>
+                <input type="search" id="stock-search" class="form-control" placeholder="Search by product, SKU, or state (e.g. low stock)&hellip;" autocomplete="off">
+                <span id="stock-search-count" class="muted small" aria-live="polite"></span>
+            </div>
+            <div id="stock-container" class="table-responsive"><p class="muted">Loading&hellip;</p></div>
+        </section>
+    </main>
+    <script src="/inventory/inventory.js"></script>
+</body>
+</html>

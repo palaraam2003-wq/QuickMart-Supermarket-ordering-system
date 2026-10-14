@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RapidMart &mdash; Inventory Categories</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/inventory/inventory.css">
+    <script src="/js/api.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+</head>
+<body data-inventory-page="categories">
+    <nav class="navbar">
+        <a href="/" class="brand">&#128722; Rapid<span>Mart</span> <span class="badge badge-info">INVENTORY</span></a>
+        <div id="user-nav" class="nav-links"></div>
+    </nav>
+    <main class="container">
+        <header class="inventory-heading">
+            <div><h2>Categories</h2><p class="muted page-intro">Organize the product catalogue and control which groups customers can browse.</p></div>
+            <button type="button" id="new-category" class="btn btn-primary">+ New Category</button>
+        </header>
+        <nav id="inventory-section-nav" class="inventory-tabs" aria-label="Inventory sections"></nav>
+
+        <form id="category-form" class="glass-card section" hidden novalidate>
+            <div class="row-between"><h3 id="category-form-title">New Category</h3><button type="button" id="category-cancel" class="btn btn-secondary btn-sm">Cancel</button></div>
+            <input type="hidden" id="categoryEditId">
+            <div class="grid-2 mt-1">
+                <div class="form-group"><label for="categoryName">Name</label><input type="text" id="categoryName" class="form-control" required maxlength="100"></div>
+                <div class="form-group"><label for="categoryDescription">Description</label><input type="text" id="categoryDescription" class="form-control" maxlength="500"></div>
+            </div>
+            <div class="form-group row"><input type="checkbox" id="categoryActive" checked><label for="categoryActive" style="margin: 0;">Active (visible to customers)</label></div>
+            <button type="submit" id="category-save" class="btn btn-success">Save Category</button>
+        </form>
+
+        <section class="glass-card section">
+            <div class="inventory-search" role="search">
+                <label for="category-search" class="sr-only">Search categories</label>
+                <input type="search" id="category-search" class="form-control" placeholder="Search by name, description, or status&hellip;" autocomplete="off">
+                <span id="category-search-count" class="muted small" aria-live="polite"></span>
+            </div>
+            <div id="categories-container" class="table-responsive"><p class="muted">Loading&hellip;</p></div>
+        </section>
+    </main>
+    <script src="/inventory/inventory.js"></script>
+</body>
+</html>

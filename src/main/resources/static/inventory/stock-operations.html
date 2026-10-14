@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RapidMart &mdash; Stock Operations</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/inventory/inventory.css">
+    <script src="/js/api.js"></script>
+    <script src="/js/ui.js"></script>
+    <script src="/js/auth.js"></script>
+</head>
+<body data-inventory-page="stock-operations">
+    <nav class="navbar">
+        <a href="/" class="brand">&#128722; Rapid<span>Mart</span> <span class="badge badge-info">INVENTORY</span></a>
+        <div id="user-nav" class="nav-links"></div>
+    </nav>
+    <main class="container">
+        <header class="inventory-heading">
+            <div><h2>Stock Operations</h2><p class="muted page-intro">Create stock requests for manager approval, receive stock once a manager has approved it, and review the complete movement history.</p></div>
+        </header>
+        <nav id="inventory-section-nav" class="inventory-tabs" aria-label="Inventory sections"></nav>
+
+        <section class="glass-card section" id="restock-requests">
+            <h3>Create Stock Request</h3>
+            <p id="create-request-readonly" class="notice mt-1 small" hidden>Stock requests are created by Inventory Officers. Managers review them under <a href="/manager/dashboard.html#stock-approvals">Stock Approval Requests</a>.</p>
+            <form id="restock-form" class="row mt-1" novalidate>
+                <label for="restockProductSearch" class="muted small">Find</label>
+                <input type="search" id="restockProductSearch" class="form-control" style="max-width: 220px;" placeholder="Filter products&hellip;" autocomplete="off">
+                <label for="restockProduct" class="muted small">Product</label>
+                <select id="restockProduct" class="form-control" style="max-width: 340px;" required></select>
+                <label for="restockQty" class="muted small">Quantity</label>
+                <input type="number" id="restockQty" class="form-control inline-control" min="1" value="50" style="width: 110px;" required>
+                <button type="submit" id="restock-btn" class="btn btn-primary btn-sm">Create Stock Request</button>
+            </form>
+            <div class="row-between mt-2"><h3>Stock Request History</h3><span class="muted small">A Manager approves or rejects each pending request. Stock changes only when approved stock is received.</span></div>
+            <div class="inventory-search mt-1" role="search">
+                <label for="request-search" class="sr-only">Search stock requests</label>
+                <input type="search" id="request-search" class="form-control" placeholder="Search by product, SKU, status, or staff email&hellip;" autocomplete="off">
+                <span id="request-search-count" class="muted small" aria-live="polite"></span>
+            </div>
+            <div id="restock-container" class="table-responsive"><p class="muted">Loading&hellip;</p></div>
+        </section>
+
+        <section class="glass-card section" id="receive-stock">
+            <h3>Receive Approved Stock</h3>
+            <div class="notice mt-1 small">Only manager-approved requests can be received, once each. Enter the quantity physically received: it cannot exceed the approved quantity or take a product above its maximum stock level.</div>
+            <div id="receive-container" class="table-responsive"><p class="muted">Loading&hellip;</p></div>
+        </section>
+
+        <section class="glass-card section" id="stock-history">
+            <h3>Stock Movement History</h3>
+            <form id="history-filter" class="row mt-1" novalidate>
+                <label for="historyProduct" class="muted small">Product</label>
+                <select id="historyProduct" class="form-control" style="max-width: 340px;"><option value="">All products</option></select>
+                <button type="submit" id="history-filter-btn" class="btn btn-primary btn-sm">Apply Filter</button>
+                <button type="button" id="history-clear" class="btn btn-secondary btn-sm">Clear</button>
+            </form>
+            <div class="inventory-search mt-1" role="search">
+                <label for="movement-search" class="sr-only">Search stock movements</label>
+                <input type="search" id="movement-search" class="form-control" placeholder="Search by product, type, reference, or staff email&hellip;" autocomplete="off">
+                <span id="movement-search-count" class="muted small" aria-live="polite"></span>
+            </div>
+            <div id="movements-container" class="table-responsive"><p class="muted">Loading&hellip;</p></div>
+        </section>
+    </main>
+    <script src="/inventory/inventory.js"></script>
+</body>
+</html>
